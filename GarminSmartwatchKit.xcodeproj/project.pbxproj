@@ -1,0 +1,768 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		15D761D07496D55F6ED49C04 /* LoopKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D96875D9188E311B80D382A /* LoopKit.framework */; };
+		1E5B28B6505CF2E0CBA4FA9B /* GarminSmartwatchKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 2DA6A781E03AC2D6D5841B23 /* GarminSmartwatchKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		36124E40766311996853FE48 /* GarminSmartwatchKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2DA6A781E03AC2D6D5841B23 /* GarminSmartwatchKit.framework */; };
+		4A3FEE0D147F77267449F3B0 /* GarminWatchStateSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 854AF36E1DA060822063BF89 /* GarminWatchStateSnapshotTests.swift */; };
+		4A57D3A79CC3B65179B4C00E /* LoopKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D96875D9188E311B80D382A /* LoopKit.framework */; };
+		536B529FC801DB1E38309520 /* LoopKitUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C5713D1B76F19E19036C5890 /* LoopKitUI.framework */; };
+		8415D9D62D7AC791CC052D7F /* GarminSmartwatchManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8ACBFAF3FE77B807E8BBE52 /* GarminSmartwatchManager.swift */; };
+		940AF746DC0767F83F800802 /* ConnectIQ in Frameworks */ = {isa = PBXBuildFile; productRef = 6CDD12731F9D9DCCDE9F5298 /* ConnectIQ */; };
+		9CCC2B13B52B84517DE424D8 /* GarminWatchSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FD370678755055717085FB6 /* GarminWatchSettings.swift */; };
+		A374B4DB8C2ED1A3A66C41F1 /* LoopKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D96875D9188E311B80D382A /* LoopKit.framework */; };
+		AE7A4095529E3FDCFD9C09CC /* ConnectIQ in Frameworks */ = {isa = PBXBuildFile; productRef = BE815B4AAAAD163C493FB99F /* ConnectIQ */; };
+		B7BD2C2C3910BAA476A299CC /* LoopKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D96875D9188E311B80D382A /* LoopKit.framework */; };
+		BC183CB9FCFDD28006573B86 /* LocalizedString.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AD1557BB7D9BE8671B029FF /* LocalizedString.swift */; };
+		BD234848CAD6E511E5BF94B1 /* GarminSmartwatchKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2DA6A781E03AC2D6D5841B23 /* GarminSmartwatchKit.framework */; };
+		C46DC325A30CE2056C44C45E /* GarminSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22EBE0F54FAF42E2BF463468 /* GarminSettingsView.swift */; };
+		C6F8746E171C5F6F1B3B6E4A /* GarminSmartwatchManager+UI.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9F0B5A44B42D80C28876EFD /* GarminSmartwatchManager+UI.swift */; };
+		C7628AEE89ED53E4626BD7FB /* GarminWatchState.swift in Sources */ = {isa = PBXBuildFile; fileRef = E13ACB2B4BDEC8FD9E506A50 /* GarminWatchState.swift */; };
+		D32E7BA71C5773C7294BBDD6 /* GarminSmartwatchKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2DA6A781E03AC2D6D5841B23 /* GarminSmartwatchKit.framework */; };
+		D57B8D9B38A40C1E7C482E1E /* GarminSmartwatchPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 716524D13DB5C50B0AEDBED1 /* GarminSmartwatchPlugin.swift */; };
+		F571508EBABD0DE285D6AD9C /* GarminSmartwatchKitUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 112DEBCE83691EF76D811686 /* GarminSmartwatchKitUI.framework */; };
+		F8B5EDF8B535E8291346DCF0 /* ConnectIQ in Frameworks */ = {isa = PBXBuildFile; productRef = 37B29757D3E6242E73ED60B6 /* ConnectIQ */; };
+		FABDFC9E2727427535C69CF9 /* LoopKitUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C5713D1B76F19E19036C5890 /* LoopKitUI.framework */; };
+		FC53B38EF59C89B25365F40A /* LocalizedString.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4064CF22ABF271B91CB57D4A /* LocalizedString.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		268606A36F9CBDC28C4F1F3F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 17F5DEAB12CEEEF2B2EC3808 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 849D6FA36AA318E65C71E4CE;
+			remoteInfo = GarminSmartwatchKit;
+		};
+		5B5CE7EBB969F9A94A9C3D48 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 17F5DEAB12CEEEF2B2EC3808 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 849D6FA36AA318E65C71E4CE;
+			remoteInfo = GarminSmartwatchKit;
+		};
+		85BF6117886C93220862E639 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 17F5DEAB12CEEEF2B2EC3808 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 849D6FA36AA318E65C71E4CE;
+			remoteInfo = GarminSmartwatchKit;
+		};
+		B3C96119AC8B85F25DFCB26A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 17F5DEAB12CEEEF2B2EC3808 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7AE84E9D50CD48BA221B301E;
+			remoteInfo = GarminSmartwatchKitUI;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		14524008F1DAE84184F9A29F /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				1E5B28B6505CF2E0CBA4FA9B /* GarminSmartwatchKit.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		0D849206DA1B14AE76A6B71B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		0FD370678755055717085FB6 /* GarminWatchSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarminWatchSettings.swift; sourceTree = "<group>"; };
+		112DEBCE83691EF76D811686 /* GarminSmartwatchKitUI.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = GarminSmartwatchKitUI.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		14175EE35ABBB4F52802DCE4 /* GarminSmartwatchKitTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = GarminSmartwatchKitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		1D96875D9188E311B80D382A /* LoopKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = LoopKit.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		22EBE0F54FAF42E2BF463468 /* GarminSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarminSettingsView.swift; sourceTree = "<group>"; };
+		2DA6A781E03AC2D6D5841B23 /* GarminSmartwatchKit.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = GarminSmartwatchKit.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		3AD1557BB7D9BE8671B029FF /* LocalizedString.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizedString.swift; sourceTree = "<group>"; };
+		4064CF22ABF271B91CB57D4A /* LocalizedString.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizedString.swift; sourceTree = "<group>"; };
+		716524D13DB5C50B0AEDBED1 /* GarminSmartwatchPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarminSmartwatchPlugin.swift; sourceTree = "<group>"; };
+		7DB5B481B09461A9171D17B5 /* GarminSmartwatchPlugin.bundle */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = GarminSmartwatchPlugin.bundle; sourceTree = BUILT_PRODUCTS_DIR; };
+		854AF36E1DA060822063BF89 /* GarminWatchStateSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarminWatchStateSnapshotTests.swift; sourceTree = "<group>"; };
+		C5713D1B76F19E19036C5890 /* LoopKitUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = LoopKitUI.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		D8ACBFAF3FE77B807E8BBE52 /* GarminSmartwatchManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarminSmartwatchManager.swift; sourceTree = "<group>"; };
+		E13ACB2B4BDEC8FD9E506A50 /* GarminWatchState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarminWatchState.swift; sourceTree = "<group>"; };
+		F9F0B5A44B42D80C28876EFD /* GarminSmartwatchManager+UI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GarminSmartwatchManager+UI.swift"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		0B1C226E3B0AAC9176E93145 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D32E7BA71C5773C7294BBDD6 /* GarminSmartwatchKit.framework in Frameworks */,
+				15D761D07496D55F6ED49C04 /* LoopKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5483022B3F4EC2A3995F7934 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BD234848CAD6E511E5BF94B1 /* GarminSmartwatchKit.framework in Frameworks */,
+				4A57D3A79CC3B65179B4C00E /* LoopKit.framework in Frameworks */,
+				536B529FC801DB1E38309520 /* LoopKitUI.framework in Frameworks */,
+				940AF746DC0767F83F800802 /* ConnectIQ in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		96026318B5A9F13B5A739B67 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A374B4DB8C2ED1A3A66C41F1 /* LoopKit.framework in Frameworks */,
+				F8B5EDF8B535E8291346DCF0 /* ConnectIQ in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EBE30E8A713716104CCB678A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				36124E40766311996853FE48 /* GarminSmartwatchKit.framework in Frameworks */,
+				F571508EBABD0DE285D6AD9C /* GarminSmartwatchKitUI.framework in Frameworks */,
+				AE7A4095529E3FDCFD9C09CC /* ConnectIQ in Frameworks */,
+				B7BD2C2C3910BAA476A299CC /* LoopKit.framework in Frameworks */,
+				FABDFC9E2727427535C69CF9 /* LoopKitUI.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		04142D1D9266BFAFA185C91E /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				1D96875D9188E311B80D382A /* LoopKit.framework */,
+				C5713D1B76F19E19036C5890 /* LoopKitUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		2AE44A31DE74729DE0B27D0B /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				2DA6A781E03AC2D6D5841B23 /* GarminSmartwatchKit.framework */,
+				14175EE35ABBB4F52802DCE4 /* GarminSmartwatchKitTests.xctest */,
+				112DEBCE83691EF76D811686 /* GarminSmartwatchKitUI.framework */,
+				7DB5B481B09461A9171D17B5 /* GarminSmartwatchPlugin.bundle */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		2D7F3EA87DF2E7CB4CE47180 = {
+			isa = PBXGroup;
+			children = (
+				6A0E82590F0A0F1D0D1D9F37 /* GarminSmartwatchKit */,
+				74D995057D4F3113980BEEE0 /* GarminSmartwatchKitTests */,
+				9CC9DBEADD7F28B91C20872E /* GarminSmartwatchKitUI */,
+				5E9C6AFEA5AE0F82485455A9 /* GarminSmartwatchPlugin */,
+				04142D1D9266BFAFA185C91E /* Frameworks */,
+				2AE44A31DE74729DE0B27D0B /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		5E9C6AFEA5AE0F82485455A9 /* GarminSmartwatchPlugin */ = {
+			isa = PBXGroup;
+			children = (
+				716524D13DB5C50B0AEDBED1 /* GarminSmartwatchPlugin.swift */,
+				0D849206DA1B14AE76A6B71B /* Info.plist */,
+			);
+			path = GarminSmartwatchPlugin;
+			sourceTree = "<group>";
+		};
+		6A0E82590F0A0F1D0D1D9F37 /* GarminSmartwatchKit */ = {
+			isa = PBXGroup;
+			children = (
+				D8ACBFAF3FE77B807E8BBE52 /* GarminSmartwatchManager.swift */,
+				0FD370678755055717085FB6 /* GarminWatchSettings.swift */,
+				E13ACB2B4BDEC8FD9E506A50 /* GarminWatchState.swift */,
+				3AD1557BB7D9BE8671B029FF /* LocalizedString.swift */,
+			);
+			path = GarminSmartwatchKit;
+			sourceTree = "<group>";
+		};
+		74D995057D4F3113980BEEE0 /* GarminSmartwatchKitTests */ = {
+			isa = PBXGroup;
+			children = (
+				854AF36E1DA060822063BF89 /* GarminWatchStateSnapshotTests.swift */,
+			);
+			path = GarminSmartwatchKitTests;
+			sourceTree = "<group>";
+		};
+		9CC9DBEADD7F28B91C20872E /* GarminSmartwatchKitUI */ = {
+			isa = PBXGroup;
+			children = (
+				22EBE0F54FAF42E2BF463468 /* GarminSettingsView.swift */,
+				F9F0B5A44B42D80C28876EFD /* GarminSmartwatchManager+UI.swift */,
+				4064CF22ABF271B91CB57D4A /* LocalizedString.swift */,
+			);
+			path = GarminSmartwatchKitUI;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		22D19410CF33D6FEC36D4CCF /* GarminSmartwatchKitTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 25BA3017F851D2C5CB69A86E /* Build configuration list for PBXNativeTarget "GarminSmartwatchKitTests" */;
+			buildPhases = (
+				F72DF44931849AB5695423E6 /* Sources */,
+				0B1C226E3B0AAC9176E93145 /* Frameworks */,
+				14524008F1DAE84184F9A29F /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				1D66BC2CAE26821732F4F199 /* PBXTargetDependency */,
+			);
+			name = GarminSmartwatchKitTests;
+			packageProductDependencies = (
+			);
+			productName = GarminSmartwatchKitTests;
+			productReference = 14175EE35ABBB4F52802DCE4 /* GarminSmartwatchKitTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		7AE84E9D50CD48BA221B301E /* GarminSmartwatchKitUI */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D4F3342016F64103E3F9BFA3 /* Build configuration list for PBXNativeTarget "GarminSmartwatchKitUI" */;
+			buildPhases = (
+				229458310A9D82432CB1CE54 /* Sources */,
+				5483022B3F4EC2A3995F7934 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				08F3218107EF3C5DA4A638E6 /* PBXTargetDependency */,
+			);
+			name = GarminSmartwatchKitUI;
+			packageProductDependencies = (
+				6CDD12731F9D9DCCDE9F5298 /* ConnectIQ */,
+			);
+			productName = GarminSmartwatchKitUI;
+			productReference = 112DEBCE83691EF76D811686 /* GarminSmartwatchKitUI.framework */;
+			productType = "com.apple.product-type.framework";
+		};
+		849D6FA36AA318E65C71E4CE /* GarminSmartwatchKit */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 95FD6AB14993E6FA24669347 /* Build configuration list for PBXNativeTarget "GarminSmartwatchKit" */;
+			buildPhases = (
+				7B13E79443F9D9D6C31AC48B /* Sources */,
+				96026318B5A9F13B5A739B67 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = GarminSmartwatchKit;
+			packageProductDependencies = (
+				37B29757D3E6242E73ED60B6 /* ConnectIQ */,
+			);
+			productName = GarminSmartwatchKit;
+			productReference = 2DA6A781E03AC2D6D5841B23 /* GarminSmartwatchKit.framework */;
+			productType = "com.apple.product-type.framework";
+		};
+		C45E36D2066C203987AF454C /* GarminSmartwatchPlugin */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 22510A0F18D4A44F75030668 /* Build configuration list for PBXNativeTarget "GarminSmartwatchPlugin" */;
+			buildPhases = (
+				A3DE1FC05F870DE20496DDCF /* Sources */,
+				EBE30E8A713716104CCB678A /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				4C2FBE3F10FF74AC5EFA7B99 /* PBXTargetDependency */,
+				070DE8246FF11DD9D6A8941A /* PBXTargetDependency */,
+			);
+			name = GarminSmartwatchPlugin;
+			packageProductDependencies = (
+				BE815B4AAAAD163C493FB99F /* ConnectIQ */,
+			);
+			productName = GarminSmartwatchPlugin;
+			productReference = 7DB5B481B09461A9171D17B5 /* GarminSmartwatchPlugin.bundle */;
+			productType = "com.apple.product-type.bundle";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		17F5DEAB12CEEEF2B2EC3808 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					22D19410CF33D6FEC36D4CCF = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+					7AE84E9D50CD48BA221B301E = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+					849D6FA36AA318E65C71E4CE = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+					C45E36D2066C203987AF454C = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 700793F201ABA8ADDC6BEE55 /* Build configuration list for PBXProject "GarminSmartwatchKit" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 2D7F3EA87DF2E7CB4CE47180;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				56611F6A6C8FC618195C79B8 /* XCRemoteSwiftPackageReference "connectiq-companion-app-sdk-ios" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 2AE44A31DE74729DE0B27D0B /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				849D6FA36AA318E65C71E4CE /* GarminSmartwatchKit */,
+				7AE84E9D50CD48BA221B301E /* GarminSmartwatchKitUI */,
+				C45E36D2066C203987AF454C /* GarminSmartwatchPlugin */,
+				22D19410CF33D6FEC36D4CCF /* GarminSmartwatchKitTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		229458310A9D82432CB1CE54 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C46DC325A30CE2056C44C45E /* GarminSettingsView.swift in Sources */,
+				C6F8746E171C5F6F1B3B6E4A /* GarminSmartwatchManager+UI.swift in Sources */,
+				FC53B38EF59C89B25365F40A /* LocalizedString.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7B13E79443F9D9D6C31AC48B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8415D9D62D7AC791CC052D7F /* GarminSmartwatchManager.swift in Sources */,
+				9CCC2B13B52B84517DE424D8 /* GarminWatchSettings.swift in Sources */,
+				C7628AEE89ED53E4626BD7FB /* GarminWatchState.swift in Sources */,
+				BC183CB9FCFDD28006573B86 /* LocalizedString.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A3DE1FC05F870DE20496DDCF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D57B8D9B38A40C1E7C482E1E /* GarminSmartwatchPlugin.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F72DF44931849AB5695423E6 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4A3FEE0D147F77267449F3B0 /* GarminWatchStateSnapshotTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		070DE8246FF11DD9D6A8941A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7AE84E9D50CD48BA221B301E /* GarminSmartwatchKitUI */;
+			targetProxy = B3C96119AC8B85F25DFCB26A /* PBXContainerItemProxy */;
+		};
+		08F3218107EF3C5DA4A638E6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 849D6FA36AA318E65C71E4CE /* GarminSmartwatchKit */;
+			targetProxy = 268606A36F9CBDC28C4F1F3F /* PBXContainerItemProxy */;
+		};
+		1D66BC2CAE26821732F4F199 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 849D6FA36AA318E65C71E4CE /* GarminSmartwatchKit */;
+			targetProxy = 5B5CE7EBB969F9A94A9C3D48 /* PBXContainerItemProxy */;
+		};
+		4C2FBE3F10FF74AC5EFA7B99 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 849D6FA36AA318E65C71E4CE /* GarminSmartwatchKit */;
+			targetProxy = 85BF6117886C93220862E639 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		0BB65C27977335C10C8E5A4E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = NO;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = org.loopkit.GarminSmartwatchKitUI;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Release;
+		};
+		28177A39E9B3113DD1292A97 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = NO;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = org.loopkit.GarminSmartwatchKit;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Debug;
+		};
+		2B2B3E6C15827CCCA2C6E1B2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				DEFINES_MODULE = NO;
+				INFOPLIST_FILE = GarminSmartwatchPlugin/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = org.loopkit.GarminSmartwatchPlugin;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				WRAPPER_EXTENSION = loopplugin;
+			};
+			name = Release;
+		};
+		30B3DC74AFDF6E9DDA124635 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		33BF354FD138366A7C5293F2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = NO;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = org.loopkit.GarminSmartwatchKit;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Release;
+		};
+		51781FD4449C11ED89139EC3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		5C70032F0616C26BEAE30C02 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				DEFINES_MODULE = NO;
+				INFOPLIST_FILE = GarminSmartwatchPlugin/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = org.loopkit.GarminSmartwatchPlugin;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				WRAPPER_EXTENSION = loopplugin;
+			};
+			name = Debug;
+		};
+		7685B46C00585C88FC6693EB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.loopkit.GarminSmartwatchKitTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		87ADDA5D387084A2FA3FD1FD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = NO;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = org.loopkit.GarminSmartwatchKitUI;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Debug;
+		};
+		C146187B8FA2D57A720E178D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.loopkit.GarminSmartwatchKitTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		22510A0F18D4A44F75030668 /* Build configuration list for PBXNativeTarget "GarminSmartwatchPlugin" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5C70032F0616C26BEAE30C02 /* Debug */,
+				2B2B3E6C15827CCCA2C6E1B2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		25BA3017F851D2C5CB69A86E /* Build configuration list for PBXNativeTarget "GarminSmartwatchKitTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7685B46C00585C88FC6693EB /* Debug */,
+				C146187B8FA2D57A720E178D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		700793F201ABA8ADDC6BEE55 /* Build configuration list for PBXProject "GarminSmartwatchKit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				51781FD4449C11ED89139EC3 /* Debug */,
+				30B3DC74AFDF6E9DDA124635 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		95FD6AB14993E6FA24669347 /* Build configuration list for PBXNativeTarget "GarminSmartwatchKit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				28177A39E9B3113DD1292A97 /* Debug */,
+				33BF354FD138366A7C5293F2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D4F3342016F64103E3F9BFA3 /* Build configuration list for PBXNativeTarget "GarminSmartwatchKitUI" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				87ADDA5D387084A2FA3FD1FD /* Debug */,
+				0BB65C27977335C10C8E5A4E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		56611F6A6C8FC618195C79B8 /* XCRemoteSwiftPackageReference "connectiq-companion-app-sdk-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/garmin/connectiq-companion-app-sdk-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.8.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		37B29757D3E6242E73ED60B6 /* ConnectIQ */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 56611F6A6C8FC618195C79B8 /* XCRemoteSwiftPackageReference "connectiq-companion-app-sdk-ios" */;
+			productName = ConnectIQ;
+		};
+		6CDD12731F9D9DCCDE9F5298 /* ConnectIQ */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 56611F6A6C8FC618195C79B8 /* XCRemoteSwiftPackageReference "connectiq-companion-app-sdk-ios" */;
+			productName = ConnectIQ;
+		};
+		BE815B4AAAAD163C493FB99F /* ConnectIQ */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 56611F6A6C8FC618195C79B8 /* XCRemoteSwiftPackageReference "connectiq-companion-app-sdk-ios" */;
+			productName = ConnectIQ;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 17F5DEAB12CEEEF2B2EC3808 /* Project object */;
+}
