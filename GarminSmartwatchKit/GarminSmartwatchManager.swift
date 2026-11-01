@@ -235,12 +235,12 @@ public final class GarminSmartwatchManager: NSObject {
             private let _friendlyName: String
             private let _modelName: String
 
-            override var uuid: UUID { _uuid }
-            override var friendlyName: String { _friendlyName }
-            override var modelName: String { _modelName }
-            var status: IQDeviceStatus { .connected }
+            public override var uuid: UUID { _uuid }
+            public override var friendlyName: String { _friendlyName }
+            public override var modelName: String { _modelName }
+            public var status: IQDeviceStatus { .connected }
 
-            init(uuid: UUID, friendlyName: String, modelName: String) {
+            public init(uuid: UUID, friendlyName: String, modelName: String) {
                 _uuid = uuid
                 _friendlyName = friendlyName
                 _modelName = modelName
@@ -252,7 +252,7 @@ public final class GarminSmartwatchManager: NSObject {
             }
 
             /// Shared simulated device UUID for consistency across the app
-            static let simulatedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+            public static let simulatedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")
                 ?? UUID()
 
             /// Creates the standard simulated Enduro 3 device
@@ -330,7 +330,7 @@ public final class GarminSmartwatchManager: NSObject {
 
             connectIQ?.getAppStatus(app) { [weak self] status in
                 guard status?.isInstalled == true else {
-                    log("Garmin \(appName) not installed")
+                    self?.log("Garmin \(appName) not installed")
                     return
                 }
                 self?.log("Sending to Garmin \(appName)")
@@ -390,12 +390,12 @@ public final class GarminSmartwatchManager: NSObject {
             completion: { [weak self] result in
                 switch result {
                 case .success:
-                    log("Sent to Garmin \(appName)")
+                    self?.log("Sent to Garmin \(appName)")
                 default:
                     if isRetry {
-                        log(type: .error, "Sending to Garmin \(appName) failed after retry")
+                        self?.log(type: .error, "Sending to Garmin \(appName) failed after retry")
                     } else {
-                        log(type: .error, "Sending to Garmin \(appName) failed, retrying in 2 s")
+                        self?.log(type: .error, "Sending to Garmin \(appName) failed, retrying in 2 s")
                         // Retry after delay - SDK may need time after re-registration
                         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                             self?.log("Retrying send to Garmin \(appName)")
@@ -406,7 +406,6 @@ public final class GarminSmartwatchManager: NSObject {
             }
         )
     }
-}
 }
 
 // MARK: - Connect IQ delegates
@@ -495,7 +494,6 @@ extension GarminSmartwatchManager: IQUIOverrideDelegate, IQDeviceEventDelegate, 
         // This prevents double sends when watchface request coincides with determination
         triggerWatchStateUpdate(triggeredBy: "WatchRequest")
     }
-}
 }
 
 // MARK: - SmartwatchManager
