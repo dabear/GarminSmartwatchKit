@@ -83,7 +83,6 @@ targets:
       - target: GarminSmartwatchKitUI
         embed: true
       - package: ConnectIQ
-        embed: true
       - framework: LoopKit.framework
         implicit: true
         embed: false

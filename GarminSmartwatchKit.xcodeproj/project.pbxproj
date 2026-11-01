@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		15D761D07496D55F6ED49C04 /* LoopKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D96875D9188E311B80D382A /* LoopKit.framework */; };
-		1D98A550A7AABB5B633CEECE /* ConnectIQ in Embed Frameworks */ = {isa = PBXBuildFile; productRef = BE815B4AAAAD163C493FB99F /* ConnectIQ */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		1E5B28B6505CF2E0CBA4FA9B /* GarminSmartwatchKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 2DA6A781E03AC2D6D5841B23 /* GarminSmartwatchKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		36124E40766311996853FE48 /* GarminSmartwatchKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2DA6A781E03AC2D6D5841B23 /* GarminSmartwatchKit.framework */; };
 		4A3FEE0D147F77267449F3B0 /* GarminWatchStateSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 854AF36E1DA060822063BF89 /* GarminWatchStateSnapshotTests.swift */; };
@@ -86,7 +85,6 @@
 			files = (
 				D8431D1EE454B1DAB70A35A5 /* GarminSmartwatchKit.framework in Embed Frameworks */,
 				DF75BD61763F7A5D27398377 /* GarminSmartwatchKitUI.framework in Embed Frameworks */,
-				1D98A550A7AABB5B633CEECE /* ConnectIQ in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
