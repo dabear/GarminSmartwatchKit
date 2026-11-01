@@ -26,7 +26,7 @@ The project is generated with [XcodeGen](https://github.com/yonaskolb/XcodeGen) 
 
 ## Screenshot
 
-Loop's experimental build (`experimental/garmin` branches) lists Garmin as coming soon:
+Loop's personal build (`smartwatch-manager-review-pr-plus-local-changes` branches) lists Garmin as coming soon:
 
 <img src="docs/loop-add-watch-coming-soon.png" width="220" alt="Loop's Add Watch: Pebble, and Garmin marked Coming soon">
 
