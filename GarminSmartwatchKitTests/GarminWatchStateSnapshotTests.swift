@@ -161,3 +161,29 @@ import Testing
         #expect(GarminSmartwatchManager().watchStateData() == nil)
     }
 }
+
+@Suite("Garmin device alerts") struct GarminDeviceAlertTests {
+    private final class Host: SmartwatchManagerDelegate {
+        var issued: [SmartwatchDeviceAlert] = []
+        var retracted: [SmartwatchAlertIdentifier] = []
+        func smartwatchManagerDidUpdateState(_: SmartwatchManager) {}
+        func smartwatchManagerWantsDeletion(_: SmartwatchManager) async {}
+        func smartwatchManagerRequestsRefresh(_: SmartwatchManager) {}
+        func smartwatchManager(_: SmartwatchManager, didLogEvent _: SmartwatchDeviceLogEntry) {}
+        func smartwatchManager(_: SmartwatchManager, issueDeviceAlert alert: SmartwatchDeviceAlert) { issued.append(alert) }
+        func smartwatchManager(_: SmartwatchManager, retractDeviceAlert identifier: SmartwatchAlertIdentifier) { retracted.append(identifier) }
+    }
+
+    @Test("Garmin Connect missing raises a host alert; deleting the plugin retracts it") func connectMobileMissing() async {
+        let host = Host()
+        let manager = GarminSmartwatchManager()
+        manager.smartwatchManagerDelegate = host
+
+        manager.needsToInstallConnectMobile()
+        #expect(host.issued.map(\.identifier) == [GarminSmartwatchManager.connectMobileMissingAlert])
+        #expect(host.issued.first?.level == .warning)
+
+        await withCheckedContinuation { done in manager.delete { done.resume() } }
+        #expect(host.retracted == [GarminSmartwatchManager.connectMobileMissingAlert])
+    }
+}

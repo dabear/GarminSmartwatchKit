@@ -284,6 +284,7 @@ public final class GarminSmartwatchManager: NSObject {
     /// updates our `devices` property.
     /// - Parameter url: The URL provided by Garmin Connect containing device selection info.
     private func parseDevices(for url: URL) {
+        connectMobileIsAvailable()
         let parsed = connectIQ?.parseDeviceSelectionResponse(from: url) as? [IQDevice]
         devices = parsed ?? []
         deviceSelectionPromise?(.success(devices))
@@ -413,13 +414,30 @@ public final class GarminSmartwatchManager: NSObject {
 extension GarminSmartwatchManager: IQUIOverrideDelegate, IQDeviceEventDelegate, IQAppMessageDelegate {
     // MARK: - IQUIOverrideDelegate
 
-    /// Garmin Connect isn't installed: shown in the settings, with a link to install it.
+    /// Garmin Connect isn't installed: a host alert (device selection and sending
+    /// can't work without it), and a warning with a link in the settings.
     public func needsToInstallConnectMobile() {
         log(type: .error, "Garmin Connect app not available; install it from the App Store")
+        smartwatchManagerDelegate?.smartwatchManager(self, issueDeviceAlert: SmartwatchDeviceAlert(
+            identifier: Self.connectMobileMissingAlert,
+            level: .warning,
+            title: LocalizedString("Garmin Connect isn't installed", comment: "Garmin alert title: Garmin Connect missing"),
+            body: LocalizedString("Install Garmin Connect from the App Store to choose Garmin watches and send them glucose.", comment: "Garmin alert body: Garmin Connect missing")
+        ))
         DispatchQueue.main.async {
             self.isConnectMobileMissing = true
             self.stateDidChange.send()
         }
+    }
+
+    static let connectMobileMissingAlert = SmartwatchAlertIdentifier("connectMobileMissing")
+
+    /// Garmin Connect answered, so it's installed: the alert no longer applies.
+    private func connectMobileIsAvailable() {
+        guard isConnectMobileMissing else { return }
+        isConnectMobileMissing = false
+        smartwatchManagerDelegate?.smartwatchManager(self, retractDeviceAlert: Self.connectMobileMissingAlert)
+        stateDidChange.send()
     }
 
     /// Opens Garmin Connect in the App Store.
@@ -529,6 +547,7 @@ extension GarminSmartwatchManager: SmartwatchManager {
     /// Stops sending: the watch apps get nothing more from the host.
     public func delete(completion: @escaping () -> Void) {
         latestSnapshot = nil
+        smartwatchManagerDelegate?.smartwatchManager(self, retractDeviceAlert: Self.connectMobileMissingAlert)
         connectIQ?.unregister(forAllDeviceEvents: self)
         connectIQ?.unregister(forAllAppMessages: self)
         watchApps.removeAll()
