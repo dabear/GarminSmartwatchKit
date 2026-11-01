@@ -528,7 +528,7 @@ extension GarminSmartwatchManager: SmartwatchManager {
     public var pluginIdentifier: String { Self.pluginIdentifier }
     public var localizedTitle: String { Self.localizedTitle }
     public var isOnboarded: Bool { true }
-    // Required by Loop's LoopKit; a watch has no signal or operable state of its own here.
+    // A watch has no signal or operable state of its own here.
     public var inSignalLoss: Bool { false }
     public var isInoperable: Bool { false }
 
@@ -560,12 +560,7 @@ extension GarminSmartwatchManager: SmartwatchManager {
         "## GarminSmartwatchManager\n* devices: \(devices.count)\n* settings: \(settings)\n* snapshot: \(latestSnapshot == nil ? "none" : "received")"
     }
 
-    // Both forms, for hosts on either LoopKit (async in Loop's, completion in Trio's).
     public func acknowledgeAlert(alertIdentifier _: Alert.AlertIdentifier) async throws {}
-
-    public func acknowledgeAlert(alertIdentifier _: Alert.AlertIdentifier, completion: @escaping (Error?) -> Void) {
-        completion(nil)
-    }
 
     public func getSoundBaseURL() -> URL? { nil }
     public func getSounds() -> [Alert.Sound] { [] }
