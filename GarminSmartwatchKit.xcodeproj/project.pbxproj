@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		15D761D07496D55F6ED49C04 /* LoopKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D96875D9188E311B80D382A /* LoopKit.framework */; };
+		1D98A550A7AABB5B633CEECE /* ConnectIQ in Embed Frameworks */ = {isa = PBXBuildFile; productRef = BE815B4AAAAD163C493FB99F /* ConnectIQ */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		1E5B28B6505CF2E0CBA4FA9B /* GarminSmartwatchKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 2DA6A781E03AC2D6D5841B23 /* GarminSmartwatchKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		36124E40766311996853FE48 /* GarminSmartwatchKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2DA6A781E03AC2D6D5841B23 /* GarminSmartwatchKit.framework */; };
 		4A3FEE0D147F77267449F3B0 /* GarminWatchStateSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 854AF36E1DA060822063BF89 /* GarminWatchStateSnapshotTests.swift */; };
@@ -26,6 +27,8 @@
 		C7628AEE89ED53E4626BD7FB /* GarminWatchState.swift in Sources */ = {isa = PBXBuildFile; fileRef = E13ACB2B4BDEC8FD9E506A50 /* GarminWatchState.swift */; };
 		D32E7BA71C5773C7294BBDD6 /* GarminSmartwatchKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2DA6A781E03AC2D6D5841B23 /* GarminSmartwatchKit.framework */; };
 		D57B8D9B38A40C1E7C482E1E /* GarminSmartwatchPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 716524D13DB5C50B0AEDBED1 /* GarminSmartwatchPlugin.swift */; };
+		D8431D1EE454B1DAB70A35A5 /* GarminSmartwatchKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 2DA6A781E03AC2D6D5841B23 /* GarminSmartwatchKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		DF75BD61763F7A5D27398377 /* GarminSmartwatchKitUI.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 112DEBCE83691EF76D811686 /* GarminSmartwatchKitUI.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		F571508EBABD0DE285D6AD9C /* GarminSmartwatchKitUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 112DEBCE83691EF76D811686 /* GarminSmartwatchKitUI.framework */; };
 		F8B5EDF8B535E8291346DCF0 /* ConnectIQ in Frameworks */ = {isa = PBXBuildFile; productRef = 37B29757D3E6242E73ED60B6 /* ConnectIQ */; };
 		FABDFC9E2727427535C69CF9 /* LoopKitUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C5713D1B76F19E19036C5890 /* LoopKitUI.framework */; };
@@ -71,6 +74,19 @@
 			dstSubfolderSpec = 10;
 			files = (
 				1E5B28B6505CF2E0CBA4FA9B /* GarminSmartwatchKit.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A32DDFCCE83722C169205581 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				D8431D1EE454B1DAB70A35A5 /* GarminSmartwatchKit.framework in Embed Frameworks */,
+				DF75BD61763F7A5D27398377 /* GarminSmartwatchKitUI.framework in Embed Frameworks */,
+				1D98A550A7AABB5B633CEECE /* ConnectIQ in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -279,6 +295,7 @@
 			buildPhases = (
 				A3DE1FC05F870DE20496DDCF /* Sources */,
 				EBE30E8A713716104CCB678A /* Frameworks */,
+				A32DDFCCE83722C169205581 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -453,6 +470,7 @@
 		2B2B3E6C15827CCCA2C6E1B2 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
 				DEFINES_MODULE = NO;
 				INFOPLIST_FILE = GarminSmartwatchPlugin/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "";
@@ -624,6 +642,7 @@
 		5C70032F0616C26BEAE30C02 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
 				DEFINES_MODULE = NO;
 				INFOPLIST_FILE = GarminSmartwatchPlugin/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "";

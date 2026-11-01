@@ -71,13 +71,19 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: org.loopkit.GarminSmartwatchPlugin
         INFOPLIST_FILE: GarminSmartwatchPlugin/Info.plist
         WRAPPER_EXTENSION: loopplugin
+        # The host signs the plugin and its frameworks when it copies them in
+        # (Loop's copy-plugins.sh), so the bundle builds without a team.
+        CODE_SIGNING_ALLOWED: NO
         DEFINES_MODULE: NO
         SKIP_INSTALL: YES
         LD_RUNPATH_SEARCH_PATHS: ""
     dependencies:
       - target: GarminSmartwatchKit
+        embed: true
       - target: GarminSmartwatchKitUI
+        embed: true
       - package: ConnectIQ
+        embed: true
       - framework: LoopKit.framework
         implicit: true
         embed: false
