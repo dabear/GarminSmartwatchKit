@@ -24,6 +24,12 @@ It is derived from Trio's `GarminManager`, `GarminWatchState` and `GarminWatchSe
 
 The project is generated with [XcodeGen](https://github.com/yonaskolb/XcodeGen) from `project.yml`; the generated project is committed.
 
+## Screenshot
+
+Loop's experimental build (`experimental/garmin` branches) lists Garmin as coming soon:
+
+<img src="docs/loop-add-watch-coming-soon.png" width="220" alt="Loop's Add Watch: Pebble, and Garmin marked Coming soon">
+
 ## Licence
 
 MIT. See `LICENSE`, which keeps Trio's copyright notice.
