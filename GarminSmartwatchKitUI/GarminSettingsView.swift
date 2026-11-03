@@ -103,7 +103,10 @@ struct GarminSettingsView: View {
         }
         .confirmationDialog(LocalizedString("Delete Garmin?", comment: "Garmin settings: confirm removal"), isPresented: $confirmingRemoval, titleVisibility: .visible) {
             Button(LocalizedString("Delete", comment: "Garmin settings: confirm removal button"), role: .destructive) {
-                model.manager.delete { DispatchQueue.main.async(execute: done) }
+                Task {
+                    await model.manager.delete()
+                    done()
+                }
             }
         }
         .alert(LocalizedString("Switch the watchface on the watch", comment: "Garmin settings: watchface switch title"), isPresented: $confirmingWatchfaceSwitch) {

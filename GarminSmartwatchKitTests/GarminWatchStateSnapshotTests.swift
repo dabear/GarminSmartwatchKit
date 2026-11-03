@@ -183,7 +183,7 @@ import Testing
         #expect(host.issued.map(\.identifier) == [GarminSmartwatchManager.connectMobileMissingAlert])
         #expect(host.issued.first?.level == .warning)
 
-        await withCheckedContinuation { done in manager.delete { done.resume() } }
+        await manager.delete()
         #expect(host.retracted == [GarminSmartwatchManager.connectMobileMissingAlert])
     }
 }

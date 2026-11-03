@@ -545,13 +545,13 @@ extension GarminSmartwatchManager: SmartwatchManager {
     }
 
     /// Stops sending: the watch apps get nothing more from the host.
-    public func delete(completion: @escaping () -> Void) {
+    public func delete() async {
         latestSnapshot = nil
         smartwatchManagerDelegate?.smartwatchManager(self, retractDeviceAlert: Self.connectMobileMissingAlert)
         connectIQ?.unregister(forAllDeviceEvents: self)
         connectIQ?.unregister(forAllAppMessages: self)
         watchApps.removeAll()
-        notifyDelegateOfDeletion(completion: completion)
+        await smartwatchManagerDelegate?.smartwatchManagerWantsDeletion(self)
     }
 
     public func initializationComplete(for _: [Pluggable]) {}
