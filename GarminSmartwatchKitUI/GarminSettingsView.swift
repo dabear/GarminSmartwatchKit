@@ -54,17 +54,10 @@ final class GarminSettingsModel: ObservableObject {
     func removeDevice(_ device: IQDevice) {
         manager.updateDeviceList(manager.devices.filter { $0.uuid != device.uuid })
     }
-
-    #if targetEnvironment(simulator)
-        func addSimulatedDevice() {
-            manager.updateDeviceList(manager.devices + [GarminSmartwatchManager.MockIQDevice.createSimulated()])
-        }
-    #endif
 }
 
 struct GarminSettingsView: View {
     @ObservedObject var model: GarminSettingsModel
-    let allowDebugFeatures: Bool
     let done: () -> Void
 
     @State private var confirmingRemoval = false
@@ -157,11 +150,6 @@ struct GarminSettingsView: View {
             }
             .onDelete(perform: model.removeDevices)
             Button(LocalizedString("Add Garmin Watch", comment: "Garmin settings: choose watches in Garmin Connect"), action: model.addDevices)
-            #if targetEnvironment(simulator)
-                if allowDebugFeatures {
-                    Button(LocalizedString("Add Simulated Watch", comment: "Garmin settings: simulator only"), action: model.addSimulatedDevice)
-                }
-            #endif
         } header: {
             Text(LocalizedString("Watches", comment: "Garmin settings: devices section"))
         } footer: {
