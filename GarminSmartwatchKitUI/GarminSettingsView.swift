@@ -51,6 +51,10 @@ final class GarminSettingsModel: ObservableObject {
         manager.updateDeviceList(remaining)
     }
 
+    func removeDevice(_ device: IQDevice) {
+        manager.updateDeviceList(manager.devices.filter { $0.uuid != device.uuid })
+    }
+
     #if targetEnvironment(simulator)
         func addSimulatedDevice() {
             manager.updateDeviceList(manager.devices + [GarminSmartwatchManager.MockIQDevice.createSimulated()])
@@ -65,6 +69,7 @@ struct GarminSettingsView: View {
 
     @State private var confirmingRemoval = false
     @State private var confirmingWatchfaceSwitch = false
+    @State private var editMode: EditMode = .inactive
 
     var body: some View {
         List {
@@ -96,9 +101,27 @@ struct GarminSettingsView: View {
             }
         }
         .navigationTitle(GarminSmartwatchManager.localizedTitle)
+        .environment(\.editMode, $editMode)
+        .onChange(of: model.devices.isEmpty) { _, isEmpty in
+            if isEmpty { editMode = .inactive }
+        }
         .toolbar {
+            // Edit shows the delete control on each watch; while editing, its Done is the only one.
+            ToolbarItem(placement: .topBarLeading) {
+                if editMode.isEditing {
+                    Button(LocalizedString("Done", comment: "Garmin settings: stop editing the watches")) {
+                        withAnimation { editMode = .inactive }
+                    }
+                } else if !model.devices.isEmpty {
+                    Button(LocalizedString("Edit", comment: "Garmin settings: edit the watches")) {
+                        withAnimation { editMode = .active }
+                    }
+                }
+            }
             ToolbarItem(placement: .confirmationAction) {
-                Button(LocalizedString("Done", comment: "Garmin settings: close"), action: done)
+                if !editMode.isEditing {
+                    Button(LocalizedString("Done", comment: "Garmin settings: close"), action: done)
+                }
             }
         }
         .confirmationDialog(LocalizedString("Delete Garmin?", comment: "Garmin settings: confirm removal"), isPresented: $confirmingRemoval, titleVisibility: .visible) {
@@ -122,10 +145,15 @@ struct GarminSettingsView: View {
     private var devicesSection: some View {
         Section {
             ForEach(model.devices, id: \.uuid) { device in
-                VStack(alignment: .leading) {
-                    Text(device.friendlyName)
-                    Text(device.modelName).font(.footnote).foregroundStyle(.secondary)
-                }
+                // One text view: the swipe has less layout to get out of step with.
+                Text("\(device.friendlyName ?? "")\n\(Text(device.modelName ?? "").font(.footnote).foregroundStyle(.secondary))")
+                    .contextMenu {
+                        Button(role: .destructive) {
+                            model.removeDevice(device)
+                        } label: {
+                            Label(LocalizedString("Remove", comment: "Garmin settings: remove a watch"), systemImage: "trash")
+                        }
+                    }
             }
             .onDelete(perform: model.removeDevices)
             Button(LocalizedString("Add Garmin Watch", comment: "Garmin settings: choose watches in Garmin Connect"), action: model.addDevices)
@@ -137,7 +165,7 @@ struct GarminSettingsView: View {
         } header: {
             Text(LocalizedString("Watches", comment: "Garmin settings: devices section"))
         } footer: {
-            Text(LocalizedString("Garmin Connect opens to choose the watches. Swipe to remove one.", comment: "Garmin settings: devices footer"))
+            Text(LocalizedString("Garmin Connect opens to choose the watches. Swipe, or tap Edit, to remove one.", comment: "Garmin settings: devices footer"))
         }
     }
 
