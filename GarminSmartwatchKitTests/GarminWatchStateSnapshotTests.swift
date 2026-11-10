@@ -122,7 +122,7 @@ import Testing
         var withHistory = options
         withHistory.historyCount = 48
         let history = (0 ..< 37).reversed().map { reading(minutesAgo: Double($0) * 5, 100 + Double($0)) }
-        let states = GarminWatchState.states(from: snapshot(history: history), options: withHistory, now: now)
+        let states = GarminWatchState.states(from: hostData(history: history), options: withHistory, now: now)
 
         #expect(states.count == 37)
         #expect(states[36].sgv == 136)
