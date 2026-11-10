@@ -11,7 +11,7 @@ import Testing
         primaryAttributeChoice: "cob",
         secondaryAttributeChoice: "tbr",
         glucoseColorScheme: "static",
-        sendsHistory: false
+        historyCount: GarminWatchface.trio.historyCount
     )
 
     private func reading(minutesAgo: Double, _ mgdL: Double, _ trend: SmartwatchGlucoseTrend? = .flat)
@@ -86,7 +86,7 @@ import Testing
 
     @Test("SwissAlpine and the complication app get up to 24 readings, newest first") func history() {
         var withHistory = options
-        withHistory.sendsHistory = true
+        withHistory.historyCount = GarminWatchface.swissalpine.historyCount
         let history = (0 ..< 36).reversed().map { reading(minutesAgo: Double($0) * 5, 100 + Double($0)) }
         let states = GarminWatchState.states(from: snapshot(history: history), options: withHistory, now: now)
 
@@ -96,6 +96,17 @@ import Testing
         #expect(states[1].date == milliseconds(minutesAgo: 5), "older entries carry the reading's time")
         #expect(states[1].iob == nil, "older entries carry only time and glucose")
         #expect(states[23].sgv == 123)
+    }
+
+    @Test("A count above the host's 3 h gets every reading the host sent") func historyBeyondSnapshot() {
+        var withHistory = options
+        withHistory.historyCount = 48
+        let history = (0 ..< 37).reversed().map { reading(minutesAgo: Double($0) * 5, 100 + Double($0)) }
+        let states = GarminWatchState.states(from: snapshot(history: history), options: withHistory, now: now)
+
+        #expect(states.count == 37)
+        #expect(states[36].sgv == 136)
+        #expect(states[36].date == milliseconds(minutesAgo: 180))
     }
 
     @Test("No loop yet: 31 minutes ago, so the watch shows it as stale") func noLoop() {

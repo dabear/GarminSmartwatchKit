@@ -87,9 +87,14 @@ public enum GarminWatchface: String, CaseIterable, Identifiable, Codable, Hashab
         }
     }
 
-    /// SwissAlpine and the complication app show up to 24 readings; Trio's watchface one.
-    public var showsHistory: Bool {
-        self == .swissalpine || self == .complication
+    /// The most readings the watch app shows, newest included. The host's snapshot
+    /// holds only `SmartwatchStatusSnapshot.historyInterval` (3 h) of readings, so a
+    /// count above 36 gets no more than that.
+    public var historyCount: Int {
+        switch self {
+        case .trio: return 1
+        case .swissalpine, .complication: return 24
+        }
     }
 }
 
