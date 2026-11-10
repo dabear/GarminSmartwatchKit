@@ -545,6 +545,10 @@ extension GarminSmartwatchManager: IQUIOverrideDelegate, IQDeviceEventDelegate, 
             return
         }
 
+        // The app is asking, so answer even when nothing changed: a freshly opened
+        // watch app or glance has no data until it gets a send.
+        lastSentDataHash = nil
+
         // Use triggerWatchStateUpdate for consistent deduplication and debouncing
         // This prevents double sends when watchface request coincides with determination
         triggerWatchStateUpdate(triggeredBy: "WatchRequest")
