@@ -624,7 +624,8 @@ extension GarminSmartwatchManager: SmartwatchManager {
             scheduledBasalRate: await delegate.smartwatchManagerScheduledBasalRate(self),
             tempBasal: await delegate.smartwatchManagerTempBasal(self),
             insulinSensitivity: await delegate.smartwatchManagerInsulinSensitivity(self),
-            correctionRange: await delegate.smartwatchManagerCorrectionRange(self)
+            correctionRange: await delegate.smartwatchManagerCorrectionRange(self),
+            glucoseDisplayLimits: await delegate.smartwatchManagerGlucoseDisplayLimits(self)
         )
     }
 
