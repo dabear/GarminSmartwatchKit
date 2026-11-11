@@ -170,7 +170,8 @@ public final class GarminSmartwatchManager: NSObject {
             primaryAttributeChoice: settings.primaryAttributeChoice.rawValue,
             secondaryAttributeChoice: settings.secondaryAttributeChoice.rawValue,
             glucoseColorScheme: settings.glucoseColorScheme.rawValue,
-            sendsHistory: settings.watchface.showsHistory
+            historySpan: settings.watchface.historySpan,
+            historySpacing: settings.watchface.historySpacing
         )
         return try? JSONEncoder().encode(GarminWatchState.states(from: host, options: options))
     }
@@ -567,6 +568,10 @@ extension GarminSmartwatchManager: IQUIOverrideDelegate, IQDeviceEventDelegate, 
         guard let statusString = message as? String, statusString == "status" else {
             return
         }
+
+        // The app is asking, so answer even when nothing changed: a freshly opened
+        // watch app or glance has no data until it gets a send.
+        lastSentDataHash = nil
 
         // Use triggerWatchStateUpdate for consistent deduplication and debouncing
         // This prevents double sends when watchface request coincides with determination
