@@ -118,7 +118,7 @@ import Testing
         #expect(states[23].sgv == 123)
     }
 
-    @Test("A count above the host's 3 h gets every reading the host sent") func historyBeyondSnapshot() {
+    @Test("A count above the host's 3 h gets every reading the host sent") func historyBeyondInterval() {
         var withHistory = options
         withHistory.historyCount = 48
         let history = (0 ..< 37).reversed().map { reading(minutesAgo: Double($0) * 5, 100 + Double($0)) }

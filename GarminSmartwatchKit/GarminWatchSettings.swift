@@ -87,8 +87,8 @@ public enum GarminWatchface: String, CaseIterable, Identifiable, Codable, Hashab
         }
     }
 
-    /// The most readings the watch app shows, newest included. The host's snapshot
-    /// holds only `SmartwatchStatusSnapshot.historyInterval` (3 h) of readings, so a
+    /// The most readings the watch app shows, newest included. The plugin reads
+    /// only `GarminHostData.historyInterval` (3 h) of readings from the host, so a
     /// count above 36 gets no more than that.
     public var historyCount: Int {
         switch self {
