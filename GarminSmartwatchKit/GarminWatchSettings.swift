@@ -87,13 +87,24 @@ public enum GarminWatchface: String, CaseIterable, Identifiable, Codable, Hashab
         }
     }
 
-    /// The most readings the watch app shows, newest included. The plugin reads
-    /// only `GarminHostData.historyInterval` (3 h) of readings from the host, so a
-    /// count above 36 gets no more than that.
-    public var historyCount: Int {
+    /// How far back the readings the watch app gets reach, measured from the newest
+    /// reading; 0 sends the newest reading only. Time rather than a count, so it
+    /// means the same with any CGM. The plugin reads only
+    /// `GarminHostData.historyInterval` (3 h) from the host, so a longer span gets
+    /// no more than that.
+    public var historySpan: TimeInterval {
         switch self {
-        case .trio: return 1
-        case .swissalpine, .complication: return 24
+        case .trio: return 0
+        case .swissalpine, .complication: return 2 * 60 * 60
+        }
+    }
+
+    /// The least time between two readings the watch app gets. With 5 minutes a
+    /// 1-minute CGM sends every 5th reading, so these apps get as many readings, as
+    /// far apart, as with a 5-minute CGM.
+    public var historySpacing: TimeInterval {
+        switch self {
+        case .trio, .swissalpine, .complication: return 5 * 60
         }
     }
 }
