@@ -87,6 +87,36 @@ import Testing
         )
     }
 
+    private func curve(_ values: [Double]) -> [PredictedGlucoseValue] {
+        values.enumerated().map { index, value in
+            PredictedGlucoseValue(startDate: now.addingTimeInterval(Double(index) * 300), quantity: mgdL(value))
+        }
+    }
+
+    @Test("The forecast cone spans the curves at each time, up to the shortest") func forecastCone() {
+        let cone = GarminWatchState.forecastCone([curve([140, 137, 133]), curve([140, 135]), curve([140, 142, 145])])
+        #expect(cone.map(\.low) == [140, 135])
+        #expect(cone.map(\.high) == [140, 142])
+        #expect(cone.map(\.date) == [now, now.addingTimeInterval(300)])
+    }
+
+    @Test("One forecast curve is its own cone; none gives none") func forecastConeOneOrNone() {
+        let cone = GarminWatchState.forecastCone([curve([120, 118])])
+        #expect(cone.map(\.low) == [120, 118])
+        #expect(cone.map(\.high) == [120, 118])
+        #expect(GarminWatchState.forecastCone([]).isEmpty)
+    }
+
+    @Test("The forecast is read but not sent to the watch yet") func forecastNotSent() {
+        let history = [reading(minutesAgo: 5, 104), reading(minutesAgo: 0, 110, .up)]
+        var withForecast = hostData(history: history)
+        withForecast.loopState.predictedGlucose = [curve([110, 112]), curve([110, 108])]
+        #expect(
+            GarminWatchState.states(from: withForecast, options: options, now: now)
+                == GarminWatchState.states(from: hostData(history: history), options: options, now: now)
+        )
+    }
+
     @Test("The first entry carries every value") func firstEntry() {
         let history = [reading(minutesAgo: 10, 100), reading(minutesAgo: 5, 104), reading(minutesAgo: 0, 110, .up)]
         let states = GarminWatchState.states(from: hostData(

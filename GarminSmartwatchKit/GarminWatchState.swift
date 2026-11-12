@@ -309,6 +309,20 @@ public extension GarminWatchState {
         }
     }
 
+    /// The forecast as a cone: for each time step, the lowest and highest value across
+    /// the host's forecast curves (`SmartwatchLoopState.predictedGlucose`), in mg/dL,
+    /// cut where the shortest curve ends. One curve (Loop) gives its line, low equal
+    /// to high; no curves give none. Not sent to the watch yet: the message format is
+    /// to be agreed with the Garmin watch app authors.
+    static func forecastCone(_ curves: [[PredictedGlucoseValue]]) -> [(date: Date, low: Int16, high: Int16)] {
+        guard let length = curves.map(\.count).min() else { return [] }
+        return (0 ..< length).compactMap { index in
+            let values = curves.map { mgdLValue($0[index].quantity) }
+            guard let low = values.min().flatMap(mgdL), let high = values.max().flatMap(mgdL) else { return nil }
+            return (date: curves[0][index].startDate, low: low, high: high)
+        }
+    }
+
     /// One decimal, and at least 0.1 in size so a small IOB doesn't show as zero.
     static func formattedIOB(_ value: Double) -> Double {
         if value.magnitude < 0.1, value != 0 {
