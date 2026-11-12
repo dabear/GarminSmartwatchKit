@@ -107,14 +107,36 @@ import Testing
         #expect(GarminWatchState.forecastCone([]).isEmpty)
     }
 
-    @Test("The forecast is read but not sent to the watch yet") func forecastNotSent() {
+    @Test("The first entry carries the forecast cone; the others don't") func forecastSent() throws {
         let history = [reading(minutesAgo: 5, 104), reading(minutesAgo: 0, 110, .up)]
         var withForecast = hostData(history: history)
-        withForecast.loopState.predictedGlucose = [curve([110, 112]), curve([110, 108])]
-        #expect(
-            GarminWatchState.states(from: withForecast, options: options, now: now)
-                == GarminWatchState.states(from: hostData(history: history), options: options, now: now)
-        )
+        withForecast.loopState.predictedGlucose = [curve([110, 112, 115]), curve([110, 108])]
+        let states = GarminWatchState.states(from: withForecast, options: options, now: now)
+        #expect(states[0].forecastDate == UInt64(now.timeIntervalSince1970 * 1000))
+        #expect(states[0].forecastLow == [110, 108])
+        #expect(states[0].forecastHigh == [110, 112])
+        #expect(states.dropFirst().allSatisfy { $0.forecastLow == nil && $0.forecastHigh == nil && $0.forecastDate == nil })
+
+        let json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(states)) as? [[String: Any]])
+        #expect(json[0]["forecastLow"] as? [Int] == [110, 108])
+        #expect(json[0]["forecastHigh"] as? [Int] == [110, 112])
+        #expect(json[0]["forecastDate"] as? UInt64 == states[0].forecastDate)
+    }
+
+    @Test("The debug log has each curve, then the cone") func forecastLogLines() {
+        let lines = GarminWatchState.forecastLogLines([curve([110.4, 112]), curve([110, 107.6, 104])])
+        #expect(lines.count == 3)
+        #expect(lines[0] == "Debug Garmin forecast curve 1 of 2, 2 values: 110,112")
+        #expect(lines[1] == "Debug Garmin forecast curve 2 of 2, 3 values: 110,108,104")
+        #expect(lines[2].hasPrefix("Debug Garmin forecast cone (sent), 2 values from "))
+        #expect(lines[2].hasSuffix("low-high: 110-110,108-112"))
+        #expect(GarminWatchState.forecastLogLines([]).isEmpty)
+    }
+
+    @Test("Without a forecast the keys are left out") func forecastMissing() throws {
+        let states = GarminWatchState.states(from: hostData(history: [reading(minutesAgo: 0, 110)]), options: options, now: now)
+        let json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(states)) as? [[String: Any]])
+        #expect(json[0]["forecastLow"] == nil && json[0]["forecastHigh"] == nil && json[0]["forecastDate"] == nil)
     }
 
     @Test("The first entry carries every value") func firstEntry() {

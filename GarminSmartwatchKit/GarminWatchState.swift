@@ -72,6 +72,17 @@ public struct GarminWatchState: Hashable, Equatable, Sendable, Encodable {
     /// Scheduled Profile target currently active
     var targetGlucose: Int16?
 
+    /// Time of the forecast cone's first value in milliseconds since Unix epoch
+    /// (only in the first array entry). The values are 5 minutes apart.
+    var forecastDate: UInt64?
+
+    /// The forecast cone's lower edge in raw mg/dL, one value per 5 minutes from
+    /// `forecastDate`, at most 4 hours. Equal to `forecastHigh` for Loop's one curve.
+    var forecastLow: [Int16]?
+
+    /// The forecast cone's upper edge in raw mg/dL, as `forecastLow`.
+    var forecastHigh: [Int16]?
+
     public static func == (lhs: GarminWatchState, rhs: GarminWatchState) -> Bool {
         lhs.date == rhs.date &&
             lhs.glucoseDate == rhs.glucoseDate &&
@@ -89,7 +100,10 @@ public struct GarminWatchState: Hashable, Equatable, Sendable, Encodable {
             lhs.displayPrimaryAttributeChoice == rhs.displayPrimaryAttributeChoice &&
             lhs.displaySecondaryAttributeChoice == rhs.displaySecondaryAttributeChoice &&
             lhs.glucoseColorScheme == rhs.glucoseColorScheme &&
-            lhs.targetGlucose == rhs.targetGlucose
+            lhs.targetGlucose == rhs.targetGlucose &&
+            lhs.forecastDate == rhs.forecastDate &&
+            lhs.forecastLow == rhs.forecastLow &&
+            lhs.forecastHigh == rhs.forecastHigh
     }
 
     public func hash(into hasher: inout Hasher) {
@@ -110,6 +124,9 @@ public struct GarminWatchState: Hashable, Equatable, Sendable, Encodable {
         hasher.combine(displaySecondaryAttributeChoice)
         hasher.combine(glucoseColorScheme)
         hasher.combine(targetGlucose)
+        hasher.combine(forecastDate)
+        hasher.combine(forecastLow)
+        hasher.combine(forecastHigh)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -130,6 +147,9 @@ public struct GarminWatchState: Hashable, Equatable, Sendable, Encodable {
         case displaySecondaryAttributeChoice
         case glucoseColorScheme
         case targetGlucose
+        case forecastDate
+        case forecastLow
+        case forecastHigh
     }
 
     /// Custom encoding that excludes nil values from the JSON output
@@ -154,6 +174,9 @@ public struct GarminWatchState: Hashable, Equatable, Sendable, Encodable {
         try container.encodeIfPresent(displaySecondaryAttributeChoice, forKey: .displaySecondaryAttributeChoice)
         try container.encodeIfPresent(glucoseColorScheme, forKey: .glucoseColorScheme)
         try container.encodeIfPresent(targetGlucose, forKey: .targetGlucose)
+        try container.encodeIfPresent(forecastDate, forKey: .forecastDate)
+        try container.encodeIfPresent(forecastLow, forKey: .forecastLow)
+        try container.encodeIfPresent(forecastHigh, forKey: .forecastHigh)
     }
 
     private static func twoPlaces(_ value: Double) -> Double {
@@ -270,6 +293,12 @@ public extension GarminWatchState {
         first.displayPrimaryAttributeChoice = options.primaryAttributeChoice
         first.displaySecondaryAttributeChoice = options.secondaryAttributeChoice
         first.glucoseColorScheme = options.glucoseColorScheme
+        let cone = forecastCone(loop.predictedGlucose)
+        if let start = cone.first?.date {
+            first.forecastDate = milliseconds(start)
+            first.forecastLow = cone.map(\.low)
+            first.forecastHigh = cone.map(\.high)
+        }
 
         return [first] + history(after: readings, options: options).map { reading in
             var state = GarminWatchState()
@@ -312,8 +341,8 @@ public extension GarminWatchState {
     /// The forecast as a cone: for each time step, the lowest and highest value across
     /// the host's forecast curves (`SmartwatchLoopState.predictedGlucose`), in mg/dL,
     /// cut where the shortest curve ends. One curve (Loop) gives its line, low equal
-    /// to high; no curves give none. Not sent to the watch yet: the message format is
-    /// to be agreed with the Garmin watch app authors.
+    /// to high; no curves give none. Sent in the first entry as `forecastDate`,
+    /// `forecastLow` and `forecastHigh`; watch apps that don't know them ignore them.
     static func forecastCone(_ curves: [[PredictedGlucoseValue]]) -> [(date: Date, low: Int16, high: Int16)] {
         guard let length = curves.map(\.count).min() else { return [] }
         return (0 ..< length).compactMap { index in
@@ -321,6 +350,23 @@ public extension GarminWatchState {
             guard let low = values.min().flatMap(mgdL), let high = values.max().flatMap(mgdL) else { return nil }
             return (date: curves[0][index].startDate, low: low, high: high)
         }
+    }
+
+    /// The debug log lines for the forecast, in whole mg/dL: each curve, then the
+    /// cone as sent. None before the loop has run.
+    static func forecastLogLines(_ curves: [[PredictedGlucoseValue]]) -> [String] {
+        let cone = forecastCone(curves)
+        guard let first = cone.first, let last = cone.last else { return [] }
+        let dates = ISO8601DateFormatter()
+        var lines = curves.enumerated().map { index, curve in
+            "Debug Garmin forecast curve \(index + 1) of \(curves.count), \(curve.count) values: "
+                + curve.map { mgdL(mgdLValue($0.quantity)).map(String.init) ?? "?" }.joined(separator: ",")
+        }
+        lines.append(
+            "Debug Garmin forecast cone (sent), \(cone.count) values from \(dates.string(from: first.date)) to \(dates.string(from: last.date)), low-high: "
+                + cone.map { "\($0.low)-\($0.high)" }.joined(separator: ",")
+        )
+        return lines
     }
 
     /// One decimal, and at least 0.1 in size so a small IOB doesn't show as zero.
