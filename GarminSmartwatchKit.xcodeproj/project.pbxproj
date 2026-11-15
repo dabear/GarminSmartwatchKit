@@ -472,6 +472,7 @@
 				DEFINES_MODULE = NO;
 				INFOPLIST_FILE = GarminSmartwatchPlugin/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "";
+				MACH_O_TYPE = mh_dylib;
 				PRODUCT_BUNDLE_IDENTIFIER = org.loopkit.GarminSmartwatchPlugin;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -644,6 +645,7 @@
 				DEFINES_MODULE = NO;
 				INFOPLIST_FILE = GarminSmartwatchPlugin/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "";
+				MACH_O_TYPE = mh_dylib;
 				PRODUCT_BUNDLE_IDENTIFIER = org.loopkit.GarminSmartwatchPlugin;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
