@@ -275,6 +275,72 @@ import Testing
         #expect(first?.targetGlucose == 104, "5.8 mmol/L is 104.49 mg/dL")
     }
 
+    private let loop = "com.example.Loop"
+    private let trio = "org.example.Trio"
+
+    private func reading(from source: String, minutesAgo: Double, _ mgdL: Double, _ trend: GlucoseTrend?) -> StoredGlucoseSample {
+        StoredGlucoseSample(
+            provenanceIdentifier: source,
+            startDate: now.addingTimeInterval(-minutesAgo * 60),
+            quantity: LoopQuantity(unit: .milligramsPerDeciliter, doubleValue: mgdL),
+            trend: trend
+        )
+    }
+
+    @Test("In Loop, Trio's copies from Apple Health are left out: within a second, no trend") func otherAppsCopies() {
+        // Each reading twice: Loop's CGM's with its trend, and Trio's without, dated by
+        // Trio's own G7 plugin a fraction of a second earlier or later. The newest
+        // copy is later, as in the Loop report where the watch showed +0 and no arrow.
+        let history = [(10.0, 160.0, -0.3), (5, 155, 0), (0, 150, 0.4)].flatMap { minutesAgo, value, trioLater in
+            [reading(from: trio, minutesAgo: minutesAgo - trioLater / 60, value, nil), reading(from: loop, minutesAgo: minutesAgo, value, .down)]
+        }
+        let states = GarminWatchState.states(from: hostData(history: history), options: withHistory, now: now, hostIdentifier: loop)
+        #expect(states[0].sgv == 150)
+        #expect(states[0].delta == -5, "from Loop's reading 5 minutes before, not Trio's copy")
+        #expect(states[0].direction == "FortyFiveDown", "the trend from Loop's CGM")
+        #expect(states.dropFirst().map(\.sgv) == [155, 160])
+    }
+
+    @Test("Another app's readings after the host's newest still count, as when Loop's CGM stops") func newerOtherReadings() {
+        let history = [
+            reading(from: loop, minutesAgo: 10, 160, .flat),
+            reading(from: trio, minutesAgo: 10, 160, nil),
+            reading(from: trio, minutesAgo: 5, 155, nil),
+            reading(from: trio, minutesAgo: 0, 150, nil),
+        ]
+        let readings = GarminWatchState.hostReadings(history, hostIdentifier: loop)
+        #expect(readings.map(\.provenanceIdentifier) == [loop, trio, trio])
+        #expect(readings.map { $0.quantity.doubleValue(for: .milligramsPerDeciliter) } == [160, 155, 150])
+
+        // A copy up to sameReadingTolerance after the host's newest is the same reading.
+        let copy = [reading(from: loop, minutesAgo: 2, 160, .flat), reading(from: trio, minutesAgo: 0.1, 160, nil)]
+        #expect(GarminWatchState.hostReadings(copy, hostIdentifier: loop).map(\.provenanceIdentifier) == [loop])
+    }
+
+    @Test("Readings that aren't the host's own are all kept: Trio's, and Loop's from Health only") func noOwnReadings() {
+        let history = [reading(from: trio, minutesAgo: 5, 155, .flat), reading(from: trio, minutesAgo: 0, 150, .flat)]
+        #expect(GarminWatchState.hostReadings(history, hostIdentifier: loop) == history)
+        #expect(GarminWatchState.hostReadings(history, hostIdentifier: nil) == history)
+        // Trio's host stamps none: all carry LoopKit's default.
+        let unstamped = series(every: 5, for: 10)
+        #expect(GarminWatchState.hostReadings(unstamped, hostIdentifier: trio) == unstamped)
+    }
+
+    @Test("Loop's insulin sensitivity, in a glucose unit with per unit implied, is sent as Trio's") func loopInsulinSensitivity() {
+        let mgdLHost = hostData(history: [reading(minutesAgo: 0, 100)], insulinSensitivity: mgdL(54.4))
+        #expect(GarminWatchState.states(from: mgdLHost, options: options, now: now).first?.isf == 54)
+
+        let mmolHost = hostData(history: [reading(minutesAgo: 0, 100)], insulinSensitivity: LoopQuantity(unit: .millimolesPerLiter, doubleValue: 3))
+        #expect(GarminWatchState.states(from: mmolHost, options: options, now: now).first?.isf == 54)
+    }
+
+    @Test("An insulin sensitivity in a unit that isn't one is left off, not converted") func otherInsulinSensitivityUnit() {
+        let host = hostData(history: [reading(minutesAgo: 0, 100)], insulinSensitivity: LoopQuantity(unit: .gram, doubleValue: 10))
+        let first = GarminWatchState.states(from: host, options: options, now: now).first
+        #expect(first?.sgv == 100, "the rest is still sent")
+        #expect(first?.isf == nil)
+    }
+
     @Test("Trends map to Nightscout directions; small IOB stays visible") func directionsAndIOB() {
         #expect(GlucoseTrend.allCases.map(GarminWatchState.direction) == [
             "DoubleUp", "SingleUp", "FortyFiveUp", "Flat", "FortyFiveDown", "SingleDown", "DoubleDown"
