@@ -369,6 +369,27 @@ import Testing
         #expect(restored.devices.isEmpty)
     }
 
+    @Test("Settings saved before a setting was added keep their values; the new one takes its default") func settingsMissingKeys() throws {
+        // As saved by a version without Glucose Colors or Send to Watchface.
+        let saved = Data(#"{"watchface":"swissalpine","datafield":"none","primaryAttributeChoice":"isf","secondaryAttributeChoice":"eventualBG"}"#.utf8)
+        let settings = try JSONDecoder().decode(GarminWatchSettings.self, from: saved)
+        #expect(settings.watchface == .swissalpine)
+        #expect(settings.datafield == GarminDatafield.none)
+        #expect(settings.primaryAttributeChoice == .isf)
+        #expect(settings.secondaryAttributeChoice == .eventualBG)
+        #expect(settings.glucoseColorScheme == .staticColor)
+        #expect(settings.isWatchfaceDataEnabled)
+    }
+
+    @Test("A saved choice that no longer exists takes its default; the others keep theirs") func settingsUnknownValue() throws {
+        let saved = Data(#"{"watchface":"retired","datafield":"swissalpine","glucoseColorScheme":"dynamic","isWatchfaceDataEnabled":false}"#.utf8)
+        let settings = try JSONDecoder().decode(GarminWatchSettings.self, from: saved)
+        #expect(settings.watchface == .trio)
+        #expect(settings.datafield == .swissalpine)
+        #expect(settings.glucoseColorScheme == .dynamicColor)
+        #expect(settings.isWatchfaceDataEnabled == false)
+    }
+
     @Test("Saved devices come back") func devices() throws {
         let device = GarminDevice(iqDevice: IQDevice(id: UUID(), modelName: "fenix 8", friendlyName: "My fenix"))
         let state: [String: Any] = ["devices": try JSONEncoder().encode([device])]
