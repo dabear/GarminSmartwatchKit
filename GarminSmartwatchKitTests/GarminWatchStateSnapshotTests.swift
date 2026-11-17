@@ -317,6 +317,20 @@ import Testing
         #expect(GarminWatchState.hostReadings(copy, hostIdentifier: loop).map(\.provenanceIdentifier) == [loop])
     }
 
+    @Test("Another app's readings fill the host's gaps; only copies of the host's own are left out") func otherReadingsInGaps() {
+        // Loop's CGM heard nothing from 60 to 20 minutes ago (not running after an
+        // update, say); Trio's copies from Health cover the whole hour.
+        let own = [80.0, 60, 15, 10, 5, 0].map { reading(from: loop, minutesAgo: $0, 150, .flat) }
+        let trios = stride(from: 80.0, through: 0, by: -5).map { reading(from: trio, minutesAgo: $0 - 0.005, 150, nil) }
+        let readings = GarminWatchState.hostReadings(own + trios, hostIdentifier: loop)
+        // Trio's in Loop's gap are kept (to the nearest minute); those at Loop's own
+        // times are copies, left out.
+        let kept = readings.filter { $0.provenanceIdentifier == trio }
+            .map { Int((-$0.startDate.timeIntervalSince(now) / 60).rounded()) }.sorted()
+        #expect(kept == [20, 25, 30, 35, 40, 45, 50, 55, 65, 70, 75])
+        #expect(readings.filter { $0.provenanceIdentifier == loop }.count == own.count)
+    }
+
     @Test("Readings that aren't the host's own are all kept: Trio's, and Loop's from Health only") func noOwnReadings() {
         let history = [reading(from: trio, minutesAgo: 5, 155, .flat), reading(from: trio, minutesAgo: 0, 150, .flat)]
         #expect(GarminWatchState.hostReadings(history, hostIdentifier: loop) == history)
