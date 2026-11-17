@@ -148,6 +148,32 @@ public struct GarminWatchSettings: Codable, Hashable, Sendable {
     public var isWatchfaceDataEnabled: Bool = true
 
     public init() {}
+
+    /// Each setting missing from what was saved (one added since) or no longer
+    /// known (a choice removed since) takes its default, rather than all of them
+    /// going back to theirs.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        func value<T: Decodable>(_ key: CodingKeys, or fallback: T) -> T {
+            ((try? container.decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback
+        }
+        let defaults = GarminWatchSettings()
+        watchface = value(.watchface, or: defaults.watchface)
+        datafield = value(.datafield, or: defaults.datafield)
+        primaryAttributeChoice = value(.primaryAttributeChoice, or: defaults.primaryAttributeChoice)
+        secondaryAttributeChoice = value(.secondaryAttributeChoice, or: defaults.secondaryAttributeChoice)
+        glucoseColorScheme = value(.glucoseColorScheme, or: defaults.glucoseColorScheme)
+        isWatchfaceDataEnabled = value(.isWatchfaceDataEnabled, or: defaults.isWatchfaceDataEnabled)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case watchface
+        case datafield
+        case primaryAttributeChoice
+        case secondaryAttributeChoice
+        case glucoseColorScheme
+        case isWatchfaceDataEnabled
+    }
 }
 
 // MARK: - Devices
