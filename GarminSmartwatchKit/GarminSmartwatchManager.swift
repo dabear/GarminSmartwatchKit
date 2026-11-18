@@ -69,6 +69,12 @@ public final class GarminSmartwatchManager: NSObject {
         set { hostDataLock.withLock { storedHostData = newValue } }
     }
 
+    /// Whether the host shows glucose in mmol/L, for the settings screen's labels;
+    /// `false` before the host data is read.
+    public var isMillimolesPerLiterHost: Bool {
+        latestHostData?.displayUnit == .millimolesPerLiter
+    }
+
     /// The read in progress; a newer change replaces it, as the read gets everything.
     private var readTask: Task<Void, Never>?
 
@@ -175,7 +181,9 @@ public final class GarminSmartwatchManager: NSObject {
             secondaryAttributeChoice: settings.secondaryAttributeChoice.rawValue,
             glucoseColorScheme: settings.glucoseColorScheme.rawValue,
             historySpan: settings.watchface.historySpan,
-            historySpacing: settings.watchface.historySpacing
+            historySpacing: settings.watchface.historySpacing,
+            timeInRangePeriod: settings.isTimeInRangeEnabled ? settings.timeInRangePeriod : nil,
+            timeInRangeTarget: settings.timeInRangeTarget
         )
         return try? JSONEncoder().encode(GarminWatchState.states(from: host, options: options))
     }
@@ -631,7 +639,7 @@ extension GarminSmartwatchManager: SmartwatchManager {
     private func readHostData(from delegate: SmartwatchManagerDelegate) async -> GarminHostData? {
         let samples: [StoredGlucoseSample]
         do {
-            samples = try await delegate.smartwatchManager(self, glucoseSamplesSince: Date().addingTimeInterval(-GarminHostData.historyInterval))
+            samples = try await delegate.smartwatchManager(self, glucoseSamplesSince: GarminHostData.readingsStart())
         } catch {
             log(type: .error, "Garmin could not read glucose: \(error.localizedDescription)")
             return nil
