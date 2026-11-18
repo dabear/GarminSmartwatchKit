@@ -126,14 +126,16 @@ struct GarminSettingsView: View {
                     done()
                 }
             }
+        } message: {
+            Text(LocalizedString("Stops sending to your Garmin watches and forgets their settings. Watch commands are turned off, and the watch app taking commands is told so.", comment: "Garmin settings: confirm removal message"))
         }
-        .alert(LocalizedString("Switch the watchface on the watch", comment: "Garmin settings: watchface switch title"), isPresented: $confirmingWatchfaceSwitch) {
-            Button(LocalizedString("I've switched it", comment: "Garmin settings: watchface switched")) {
+        .alert(LocalizedString("Watchface Changed", comment: "Garmin settings: watchface switch title"), isPresented: $confirmingWatchfaceSwitch) {
+            Button(LocalizedString("Resume Sending", comment: "Garmin settings: resume sending to the watchface")) {
                 model.settings.isWatchfaceDataEnabled = true
             }
             Button(LocalizedString("Later", comment: "Garmin settings: switch later"), role: .cancel) {}
         } message: {
-            Text(LocalizedString("Sending to the watchface is paused until the new one runs on the watch.", comment: "Garmin settings: watchface switch message"))
+            Text(LocalizedString("Sending to the watchface is paused. Choose the new watch app on the watch, then tap Resume Sending.", comment: "Garmin settings: watchface switch message"))
         }
     }
 
@@ -165,7 +167,8 @@ struct GarminSettingsView: View {
                 ForEach(GarminWatchface.allCases) { Text($0.displayName).tag($0) }
             }
             .onChange(of: model.settings.watchface) { oldValue, newValue in
-                guard oldValue != newValue else { return }
+                // Already off on purpose: leave it off and don't ask.
+                guard oldValue != newValue, model.settings.isWatchfaceDataEnabled else { return }
                 model.settings.isWatchfaceDataEnabled = false
                 confirmingWatchfaceSwitch = true
             }
@@ -173,6 +176,7 @@ struct GarminSettingsView: View {
             Text(LocalizedString("Datafields", comment: "Garmin settings: datafield selection heading"))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+                .accessibilityAddTraits(.isHeader)
             ForEach(GarminDatafield.selectableCases) { datafield in
                 Button {
                     model.settings.toggleDatafield(datafield)
@@ -251,6 +255,8 @@ struct GarminSettingsView: View {
             }
         } header: {
             Text(LocalizedString("Display", comment: "Garmin settings: display section"))
+        } footer: {
+            Text(LocalizedString("What the Trio and SwissAlpine watch apps show next to glucose. Sens Ratio is shown with Trio only; TBR is the temp basal rate, evBG the eventual glucose.", comment: "Garmin settings: display footer"))
         }
     }
 }
