@@ -369,18 +369,150 @@ private func carbsCommand(id: String = "3f2b8c1e-4a5d-4e6f-9a7b-1c2d3e4f5a6b") -
         #expect(rig.notices(to: rig.watchControlsUUID).allSatisfy { $0.active == true })
     }
 
-    @Test("The inactive notice goes out even to a disconnected device, and is not owed")
-    func inactiveNoticeNotOwed() async {
+    @Test("The inactive notice goes out even to a disconnected device; when it fails for good it is owed apart from state")
+    func inactiveNoticeOwedApart() async {
         let rig = CommandAppRig(watchface: .trio, commands: true, devices: [0])
         let key = rig.key(rig.watchControlsUUID, on: rig.deviceA)
         rig.spy.setResult(.failure_Timeout, for: rig.watchControlsUUID, on: rig.deviceA.uuid)
         rig.manager.deviceStatusChanged(rig.deviceA, status: .notConnected)
 
         rig.change { $0.isCommandControlEnabled = false }
+        #expect(await rig.eventually { rig.manager.owedStandDowns[key] != nil })
         await rig.settle()
 
         #expect(rig.notices(to: rig.watchControlsUUID).filter { $0.active == false }.count == 2, "Sent, then once more after the failure")
-        #expect(rig.manager.owedDeliveries[key] == nil)
+        #expect(rig.manager.owedDeliveries[key] == nil, "WatchControls is no longer registered, so nothing else is owed")
+        #expect(rig.manager.announcedCommandApps.contains(key), "Still announced until a stand-down is delivered")
+    }
+
+    // MARK: - Owed stand-down
+
+    /// Turns commands off while the command app's stand-down fails twice, so it ends up owed.
+    private func missedStandDown(_ rig: CommandAppRig, app uuid: UUID) async -> String {
+        let key = rig.key(uuid, on: rig.deviceA)
+        rig.spy.setResult(.failure_Timeout, for: uuid, on: rig.deviceA.uuid)
+        rig.change { $0.isCommandControlEnabled = false }
+        _ = await rig.eventually { rig.manager.owedStandDowns[key] != nil }
+        rig.spy.setResult(nil, for: uuid, on: rig.deviceA.uuid)
+        return key
+    }
+
+    @Test("A missed stand-down goes out on the next reconnect, once")
+    func owedStandDownOnReconnect() async {
+        let rig = CommandAppRig(watchface: .trio, commands: true, devices: [0])
+        let key = await missedStandDown(rig, app: rig.watchControlsUUID)
+        #expect(rig.manager.owedStandDowns[key] != nil)
+        let before = rig.notices(to: rig.watchControlsUUID).count
+
+        rig.manager.deviceCharacteristicsDiscovered(rig.deviceA)
+        #expect(rig.notices(to: rig.watchControlsUUID).count == before + 1)
+        #expect(rig.notices(to: rig.watchControlsUUID).last == .inactive("none"))
+        #expect(rig.manager.owedStandDowns.isEmpty)
+        #expect(rig.manager.announcedCommandApps.isEmpty)
+
+        rig.manager.deviceCharacteristicsDiscovered(rig.deviceA)
+        #expect(rig.notices(to: rig.watchControlsUUID).count == before + 1)
+    }
+
+    @Test("A missed stand-down goes out after the next delivery to another app on that device")
+    func owedStandDownOnDelivery() async {
+        let rig = CommandAppRig(watchface: .trio, commands: true, devices: [0])
+        _ = await missedStandDown(rig, app: rig.watchControlsUUID)
+        let before = rig.notices(to: rig.watchControlsUUID).count
+
+        rig.manager.broadcastWatchStateData(try! JSONSerialization.data(withJSONObject: [["sgv": 120]]))
+
+        #expect(rig.allSent.contains { $0.appUUID == rig.trioUUID }, "The watchface got the state")
+        #expect(rig.notices(to: rig.watchControlsUUID).count == before + 1)
+        #expect(rig.notices(to: rig.watchControlsUUID).last == .inactive("none"))
+        #expect(rig.manager.owedStandDowns.isEmpty)
+    }
+
+    @Test("Commands off: Complication as the watchface that missed its stand-down is told when it next sends anything")
+    func registeredComplicationToldOnMessage() async {
+        let rig = CommandAppRig(watchface: .complication, commands: true, devices: [0])
+        let key = await missedStandDown(rig, app: rig.complicationUUID)
+        let before = rig.notices(to: rig.complicationUUID).count
+
+        rig.hear(["v": 1, "req": "status"], from: rig.complicationUUID, on: rig.deviceA)
+        #expect(rig.notices(to: rig.complicationUUID).count == before + 1)
+        #expect(rig.notices(to: rig.complicationUUID).last == .inactive("none"))
+        #expect(rig.manager.owedStandDowns[key] == nil)
+        #expect(rig.manager.announcedCommandApps.isEmpty)
+
+        rig.hear(["v": 1, "req": "status"], from: rig.complicationUUID, on: rig.deviceA)
+        await rig.settle()
+        #expect(rig.notices(to: rig.complicationUUID).count == before + 1, "Told once; after that it hears only state")
+    }
+
+    @Test("Commands off: Complication as the watchface that was told it is active and missed the stand-down is told on its next message")
+    func announcedComplicationToldOnMessage() async {
+        let rig = CommandAppRig(watchface: .complication, commands: true, devices: [0])
+        // The stand-down is lost without a failure the plugin sees (here: it is skipped).
+        rig.spy.setResult(.failure_AppNotFound, for: rig.complicationUUID, on: rig.deviceA.uuid)
+        rig.change { $0.isCommandControlEnabled = false }
+        let key = rig.key(rig.complicationUUID, on: rig.deviceA)
+        #expect(rig.manager.announcedCommandApps.contains(key))
+        #expect(rig.manager.owedStandDowns.isEmpty, "Not installed: nothing is owed")
+        rig.spy.setResult(nil, for: rig.complicationUUID, on: rig.deviceA.uuid)
+
+        rig.hear(from: rig.complicationUUID, on: rig.deviceA)
+        #expect(rig.notices(to: rig.complicationUUID).last == .inactive("none"))
+        #expect(rig.manager.announcedCommandApps.isEmpty)
+    }
+
+    @Test("Commands off: a registered Complication never told it is active hears nothing but state when it sends")
+    func registeredComplicationNeverAnnounced() async {
+        let rig = CommandAppRig(watchface: .complication, commands: false, devices: [0])
+
+        rig.hear(["v": 1, "req": "status"], from: rig.complicationUUID, on: rig.deviceA)
+        rig.hear(from: rig.complicationUUID, on: rig.deviceA)
+        await rig.settle()
+
+        #expect(rig.notices(to: rig.complicationUUID).isEmpty)
+    }
+
+    @Test("An owed stand-down is dropped when the app becomes the command app again")
+    func owedStandDownDroppedWhenActiveAgain() async {
+        let rig = CommandAppRig(watchface: .trio, commands: true, devices: [0])
+        _ = await missedStandDown(rig, app: rig.watchControlsUUID)
+
+        rig.change { $0.isCommandControlEnabled = true }
+        #expect(rig.manager.owedStandDowns.isEmpty)
+        #expect(rig.notices(to: rig.watchControlsUUID).last == .active("watchControls"))
+
+        rig.manager.deviceCharacteristicsDiscovered(rig.deviceA)
+        rig.hear(from: rig.watchControlsUUID, on: rig.deviceA)
+        await rig.settle()
+        #expect(rig.notices(to: rig.watchControlsUUID).last == .active("watchControls"), "No stand-down after the active notice")
+    }
+
+    @Test("Command apps told they are active survive a relaunch, so one that missed its stand-down is still told")
+    func announcedSurvivesRelaunch() async throws {
+        let rig = CommandAppRig(watchface: .complication, commands: true, devices: [0])
+        let key = rig.key(rig.complicationUUID, on: rig.deviceA)
+        #expect(rig.manager.announcedCommandApps == [key])
+
+        // Relaunched with commands off, as if they were turned off and the stand-down was missed.
+        var state = rig.manager.rawState
+        var settings = rig.manager.settings
+        settings.isCommandControlEnabled = false
+        state["settings"] = try JSONEncoder().encode(settings)
+        state["devices"] = try JSONEncoder().encode([GarminDevice]())
+        let relaunched = try #require(GarminSmartwatchManager(rawState: state))
+        #expect(relaunched.announcedCommandApps == [key])
+
+        let spy = SpyConnectIQClient()
+        relaunched.connectIQClient = spy
+        relaunched.updateDeviceList([rig.deviceA])
+        #expect(spy.notices.isEmpty, "No notice on registration while commands are off")
+
+        relaunched.receivedMessage(["v": 1, "req": "status"], from: rig.app(rig.complicationUUID, on: rig.deviceA))
+        let notice = try #require(spy.notices.last?.message as? [String: Any])
+        #expect(notice["active"] as? Bool == false)
+        #expect(notice["owner"] as? String == "none")
+        #expect(relaunched.announcedCommandApps.isEmpty)
+        #expect(relaunched.rawState["announcedCommandApps"] as? [String] == [])
     }
 
     // MARK: - Owed active notice
@@ -555,6 +687,31 @@ private func carbsCommand(id: String = "3f2b8c1e-4a5d-4e6f-9a7b-1c2d3e4f5a6b") -
     }
 
     // MARK: - Presets
+
+    @Test("Commands off: a presets request from the command app is not answered; a status request still is")
+    func presetsRequestUnansweredWhileCommandsOff() async {
+        let rig = CommandAppRig(watchface: .complication, commands: false, devices: [0])
+        await rig.attachHost()
+        let key = rig.key(rig.complicationUUID, on: rig.deviceA)
+
+        rig.hear(["v": 1, "req": "presets"], from: rig.complicationUUID, on: rig.deviceA)
+        rig.hear(["v": 1, "req": "status"], from: rig.complicationUUID, on: rig.deviceA)
+        #expect(await rig.eventually { rig.manager.forcedStateKeys.contains(key) }, "The status request is answered with the next state")
+        await rig.settle()
+
+        #expect(rig.presets(to: rig.complicationUUID).isEmpty)
+        #expect(rig.allSent.isEmpty)
+    }
+
+    @Test("Commands on: a presets request from the command app is answered")
+    func presetsRequestAnsweredWhileCommandsOn() async {
+        let rig = CommandAppRig(watchface: .complication, commands: true, devices: [0])
+        await rig.attachHost()
+        let before = rig.presets(to: rig.complicationUUID).count
+
+        rig.hear(["v": 1, "req": "presets"], from: rig.complicationUUID, on: rig.deviceA)
+        #expect(await rig.eventually { rig.presets(to: rig.complicationUUID).count == before + 1 })
+    }
 
     private func presetPushes(commandApp rig: CommandAppRig) async {
         await rig.attachHost()

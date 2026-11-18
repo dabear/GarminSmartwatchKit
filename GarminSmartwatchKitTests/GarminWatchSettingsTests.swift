@@ -127,13 +127,34 @@ import Testing
         #expect(decoded.datafields.isEmpty)
     }
 
-    @Test("Encoding writes the datafields key and not the old single one")
+    @Test("Encoding writes the datafields key and, for older versions, the first choice under the old single key")
     func encodesDatafieldsKey() throws {
-        let data = try JSONEncoder().encode(GarminWatchSettings())
+        var settings = GarminWatchSettings()
+        settings.datafields = [.loopgraph, .swissalpine]
+        let data = try JSONEncoder().encode(settings)
         let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
 
-        #expect(object["datafields"] as? [String] == ["trio"])
-        #expect(object["datafield"] == nil)
+        #expect(object["datafields"] as? [String] == ["loopgraph", "swissalpine"])
+        #expect(object["datafield"] as? String == "loopgraph")
+    }
+
+    @Test("An empty selection is written as none under the old single key, so an older version shows no datafield")
+    func encodesEmptySelectionAsNone() throws {
+        var settings = GarminWatchSettings()
+        settings.datafields = []
+        let data = try JSONEncoder().encode(settings)
+        let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        #expect(object["datafields"] as? [String] == [])
+        #expect(object["datafield"] as? String == "none")
+    }
+
+    @Test("Decoding what this version wrote still takes the full selection, not the legacy key")
+    func decodingPrefersDatafieldsOverWrittenLegacyKey() throws {
+        var settings = GarminWatchSettings()
+        settings.datafields = [.swissalpine, .trio, .loopgraph]
+        let decoded = try JSONDecoder().decode(GarminWatchSettings.self, from: JSONEncoder().encode(settings))
+        #expect(decoded.datafields == [.swissalpine, .trio, .loopgraph])
     }
 
     // MARK: - Datafield selection

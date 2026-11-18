@@ -104,8 +104,22 @@ public final class GarminSmartwatchManager: NSObject {
 
     /// Command apps sent an active notice and not yet told to stand down, by `deliveryKey(for:)`.
     /// While commands are off, only these get a notice, so an app never told it is active hears
-    /// nothing but state, as from Trio without the command app series.
-    private(set) var announcedCommandApps: Set<String> = []
+    /// nothing but state, as from Trio without the command app series. Saved in `rawState`, so a
+    /// stand-down missed before a relaunch is still sent when the app next sends anything.
+    private(set) var announcedCommandApps: Set<String> = [] {
+        didSet {
+            guard announcedCommandApps != oldValue, !isDeleted else { return }
+            smartwatchManagerDelegate?.smartwatchManagerDidUpdateState(self)
+        }
+    }
+
+    /// Stand-downs that failed for good, with the app to tell (it may no longer be registered), by
+    /// `deliveryKey(for:)`. Sent again on the next delivery, reconnect or message on that device.
+    private(set) var owedStandDowns: [String: IQApp] = [:]
+
+    /// Apps that asked for state: the next broadcast goes to them even when unchanged, whatever an
+    /// older send's completion confirms in the meantime. Consumed by that broadcast.
+    private(set) var forcedStateKeys: Set<String> = []
 
     /// Hash of the last state each app confirmed receiving, keyed by `deliveryKey(for:)`.
     private(set) var lastSentDataHashes: [String: Int] = [:]
@@ -186,6 +200,7 @@ public final class GarminSmartwatchManager: NSObject {
         settings = (rawState["settings"] as? Data).flatMap { try? decoder.decode(GarminWatchSettings.self, from: $0) }
             ?? GarminWatchSettings()
         let saved = (rawState["devices"] as? Data).flatMap { try? decoder.decode([GarminDevice].self, from: $0) } ?? []
+        announcedCommandApps = Set(rawState["announcedCommandApps"] as? [String] ?? [])
         super.init()
         start(devices: saved.map(\.iqDevice))
     }
@@ -339,6 +354,9 @@ public final class GarminSmartwatchManager: NSObject {
         }
         let registeredKeys = Set(watchApps.compactMap(deliveryKey(for:)))
         owedDeliveries = owedDeliveries.filter { registeredKeys.contains($0.key) }
+        forcedStateKeys.formIntersection(registeredKeys)
+        let deviceUUIDs = Set(devices.map(\.uuid))
+        owedStandDowns = owedStandDowns.filter { $0.value.device.map { deviceUUIDs.contains($0.uuid) } == true }
 
         // Every registered command app is the current one; a command app no longer registered stands down.
         for app in watchApps where app.uuid.map(GarminCommandApp.appUUIDs.contains) == true {
@@ -350,18 +368,21 @@ public final class GarminSmartwatchManager: NSObject {
         }
     }
 
-    /// Read by both command apps, Trio-WatchControls and Complication. Only the active notice is
-    /// owed: an app told to stand down that missed it is told again as soon as it sends anything.
+    /// Read by both command apps, Trio-WatchControls and Complication. The active notice is owed
+    /// like state; a stand-down that failed is owed in `owedStandDowns`, and an app that missed it
+    /// is told again as soon as it sends anything.
     ///
     /// While commands are off, no active notice goes out, and a stand-down only to an app that was
-    /// told it is active.
+    /// told it is active or is owed one.
     private func sendCommandAppNotice(to app: IQApp, isActive: Bool) {
         guard !isDeleted, let key = deliveryKey(for: app), let device = app.device else { return }
         if isActive {
             guard settings.isCommandControlEnabled else { return }
             announcedCommandApps.insert(key)
+            owedStandDowns[key] = nil
         } else {
-            guard announcedCommandApps.contains(key) || settings.isCommandControlEnabled else { return }
+            let wasOwed = owedStandDowns.removeValue(forKey: key) != nil
+            guard announcedCommandApps.contains(key) || settings.isCommandControlEnabled || wasOwed else { return }
         }
         let appName = appDisplayName(for: app.uuid)
         // With commands off no app takes commands, whichever the watchface makes the command app.
@@ -495,10 +516,12 @@ public final class GarminSmartwatchManager: NSObject {
             guard let key = deliveryKey(for: app), let device = app.device else { continue }
             let appName = appDisplayName(for: app.uuid)
 
-            if lastSentDataHashes[key] == currentHash, owedDeliveries[key]?.stateHash == nil {
+            if lastSentDataHashes[key] == currentHash, owedDeliveries[key]?.stateHash == nil, !forcedStateKeys.contains(key) {
                 log("Garmin \(appName) skipped, data unchanged")
                 continue
             }
+            // An unreachable app is owed this state instead.
+            forcedStateKeys.remove(key)
             guard isReachable(key: key, device: device, appName: appName) else {
                 recordOwed(for: key, stateHash: currentHash)
                 continue
@@ -547,6 +570,13 @@ public final class GarminSmartwatchManager: NSObject {
         owedDeliveries[key] = owed
     }
 
+    /// A stand-down not delivered stays owed, unless the app is the command app again meanwhile or its
+    /// device is no longer selected.
+    private func recordOwedStandDown(to app: IQApp, key: String) {
+        guard !isEntitledCommandApp(app), devices.contains(where: { $0.uuid == app.device?.uuid }) else { return }
+        owedStandDowns[key] = app
+    }
+
     /// Any delivered message proves the channel, so what the app is still owed goes out now.
     private func flushOwed(to app: IQApp, key: String, appName: String) {
         guard !isDeleted, let owed = owedDeliveries.removeValue(forKey: key) else { return }
@@ -570,6 +600,32 @@ public final class GarminSmartwatchManager: NSObject {
             guard let key = deliveryKey(for: app), !absentApps.contains(key) else { continue }
             flushOwed(to: app, key: key, appName: appDisplayName(for: app.uuid))
         }
+        flushStandDowns(on: device.uuid)
+    }
+
+    /// The device is reachable, so command apps on it that missed their stand-down are told again.
+    private func flushStandDowns(on deviceUUID: UUID) {
+        guard !isDeleted else { return }
+        for (key, app) in owedStandDowns where app.device?.uuid == deviceUUID {
+            guard !isEntitledCommandApp(app) else {
+                owedStandDowns[key] = nil
+                continue
+            }
+            sendCommandAppNotice(to: app, isActive: false)
+        }
+    }
+
+    /// The registered current command app while commands are on: the only app whose commands run.
+    private func isEntitledCommandApp(_ app: IQApp) -> Bool {
+        guard settings.isCommandControlEnabled, let uuid = app.uuid, uuid == currentCommandApp.appUUID else { return false }
+        return watchApps.contains { $0.uuid == uuid && $0.device?.uuid == app.device?.uuid }
+    }
+
+    /// An app installed or updated while the host runs answers again after a reconnect, so the
+    /// device's apps are tried again instead of waiting for a re-registration.
+    private func clearAbsentMarks(on deviceUUID: UUID) {
+        let keys = watchApps.filter { $0.device?.uuid == deviceUUID }.compactMap(deliveryKey(for:))
+        absentApps.subtract(keys)
     }
 
     // MARK: - Devices
@@ -634,6 +690,7 @@ public final class GarminSmartwatchManager: NSObject {
                     if let stateHash { self.lastSentDataHashes[key] = stateHash }
                     if standsDownCommandApp { self.announcedCommandApps.remove(key) }
                     self.flushOwed(to: app, key: key, appName: appName)
+                    if let deviceUUID = app.device?.uuid { self.flushStandDowns(on: deviceUUID) }
                 case .failure_AppNotFound:
                     self.log("Garmin \(appName) not installed, skipped until re-registered or heard from")
                     self.absentApps.insert(key)
@@ -643,6 +700,7 @@ public final class GarminSmartwatchManager: NSObject {
                     if isRetry {
                         self.log(type: .error, "Sending to Garmin \(appName) failed after retry (\(reason))")
                         self.recordOwed(for: key, stateHash: stateHash, presets: isPresets, commandApp: announcesCommandApp)
+                        if standsDownCommandApp { self.recordOwedStandDown(to: app, key: key) }
                     } else {
                         self.log(type: .error, "Sending to Garmin \(appName) failed, retrying (\(reason))")
                         DispatchQueue.main.asyncAfter(deadline: .now() + self.sendRetryDelay) { [weak self] in
@@ -754,6 +812,7 @@ extension GarminSmartwatchManager: IQUIOverrideDelegate, IQDeviceEventDelegate, 
         case .connected:
             log("Garmin device connected")
             disconnectedDevices.remove(device.uuid)
+            clearAbsentMarks(on: device.uuid)
         @unknown default:
             log("Garmin device status unknown (\(status.rawValue))")
         }
@@ -771,6 +830,8 @@ extension GarminSmartwatchManager: IQUIOverrideDelegate, IQDeviceEventDelegate, 
         guard !isDeleted else { return }
         log("Garmin device connected and ready")
         disconnectedDevices.remove(device.uuid)
+        // A datafield or watchface installed or updated meanwhile gets what it is owed now.
+        clearAbsentMarks(on: device.uuid)
         flushOwed(on: device)
 
         // Trigger a data send now that device is ready
@@ -807,12 +868,21 @@ extension GarminSmartwatchManager: IQUIOverrideDelegate, IQDeviceEventDelegate, 
 
         // A message from the app proves the channel, so it gets what it is owed right away.
         let isOnSelectedDevice = devices.contains { $0.uuid == app.device?.uuid }
+        let isCommandAppUUID = GarminCommandApp.appUUIDs.contains(appUUID)
         if let registered, let registeredKey {
             absentApps.remove(registeredKey)
+            // A registered command app with commands off may have missed its stand-down (before a
+            // relaunch, too); it hears one only if it was told it is active or is owed one.
+            if isCommandAppUUID, !isEntitledCommandApp(registered) {
+                sendCommandAppNotice(to: registered, isActive: false)
+            }
             flushOwed(to: registered, key: registeredKey, appName: appName)
-        } else if GarminCommandApp.appUUIDs.contains(appUUID), isOnSelectedDevice {
+        } else if isCommandAppUUID, isOnSelectedDevice {
             // It still acts as the command app, so it missed the notice to stand down.
             sendCommandAppNotice(to: app, isActive: false)
+        }
+        if isOnSelectedDevice, let deviceUUID = app.device?.uuid {
+            flushStandDowns(on: deviceUUID)
         }
         // Only on a selected device: any other watch must not reach the processor.
         let isCommandApp = GarminCommandApp.appUUIDs.contains(appUUID) && isOnSelectedDevice
@@ -832,12 +902,20 @@ extension GarminSmartwatchManager: IQUIOverrideDelegate, IQDeviceEventDelegate, 
             guard !self.isDeleted else { return }
 
             if let reply = outcome.reply {
-                self.sendTargetedResponse(reply, to: app, appName: appName)
+                if reply[GarminMessageKey.request] as? String == GarminCommandEnvelope.Request.presets.rawValue,
+                   !self.settings.isCommandControlEnabled
+                {
+                    // While commands are off the watch apps get only state, as from upstream Trio.
+                    self.log("Garmin presets request from \(appName) not answered, commands are off")
+                } else {
+                    self.sendTargetedResponse(reply, to: app, appName: appName)
+                }
             }
             if outcome.refreshesState {
                 // The app is asking, so answer even when nothing changed: a freshly opened
-                // watch app or glance has no data until it gets a send.
-                if let registeredKey { self.lastSentDataHashes[registeredKey] = nil }
+                // watch app or glance has no data until it gets a send. A flag rather than
+                // clearing the confirmed hash, which an older send's success could write back.
+                if let registeredKey { self.forcedStateKeys.insert(registeredKey) }
                 self.triggerWatchStateUpdate(triggeredBy: "WatchRequest")
             }
             if outcome.pushesPresets {
@@ -892,6 +970,7 @@ extension GarminSmartwatchManager: SmartwatchManager {
         var state: RawStateValue = [:]
         state["settings"] = try? encoder.encode(settings)
         state["devices"] = try? encoder.encode(devices.map(GarminDevice.init))
+        state["announcedCommandApps"] = Array(announcedCommandApps).sorted()
         return state
     }
 
@@ -978,6 +1057,8 @@ extension GarminSmartwatchManager: SmartwatchManager {
             absentApps.removeAll()
             announcedCommandApps.removeAll()
             lastSentDataHashes.removeAll()
+            owedStandDowns.removeAll()
+            forcedStateKeys.removeAll()
         }
         latestHostData = nil
         await smartwatchManagerDelegate?.retractAlert(identifier: Self.connectMobileMissingAlertIdentifier)

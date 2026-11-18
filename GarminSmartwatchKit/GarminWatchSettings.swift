@@ -293,6 +293,8 @@ public struct GarminWatchSettings: Codable, Hashable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(watchface, forKey: .watchface)
         try container.encode(datafields, forKey: .datafields)
+        // For a downgrade: the previous version reads only this key and otherwise falls back to Trio.
+        try container.encode(datafields.first ?? .none, forKey: .datafield)
         try container.encode(primaryAttributeChoice, forKey: .primaryAttributeChoice)
         try container.encode(secondaryAttributeChoice, forKey: .secondaryAttributeChoice)
         try container.encode(glucoseColorScheme, forKey: .glucoseColorScheme)
@@ -304,7 +306,8 @@ public struct GarminWatchSettings: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case watchface
         case datafields
-        /// The single datafield saved by older versions; read only.
+        /// The single datafield older versions read and save; read only when `datafields` is missing,
+        /// and written as the first choice (or `none`) so an older version still finds it.
         case datafield
         case primaryAttributeChoice
         case secondaryAttributeChoice
