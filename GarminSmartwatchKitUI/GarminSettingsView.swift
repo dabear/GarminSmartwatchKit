@@ -218,9 +218,7 @@ struct GarminSettingsView: View {
             Text(LocalizedString("Commands", comment: "Garmin settings: commands section"))
         } footer: {
             VStack(alignment: .leading, spacing: 8) {
-                Text(LocalizedString("Lets your Garmin watch log carbs and start overrides. Allow Bolus Commands also lets it give boluses. Both are off by default.
-
-A watch bolus needs a glucose reading from the last 15 minutes and must come at least 6 minutes after the previous watch bolus. The app still applies its maximum bolus.", comment: "Garmin settings: commands footer"))
+                Text(LocalizedString("Lets your Garmin watch log carbs and start overrides. Allow Bolus Commands also lets it give boluses. Both are off by default.\n\nA watch bolus needs a glucose reading from the last 15 minutes and must come at least 6 minutes after the previous watch bolus. The app still applies its maximum bolus.", comment: "Garmin settings: commands footer"))
                 Text(LocalizedString("Only turn this on if you keep your watch locked and with you.", comment: "Garmin settings: commands warning")).bold()
             }
         }
