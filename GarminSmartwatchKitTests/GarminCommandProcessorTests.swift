@@ -8,22 +8,24 @@ import Testing
 /// revocation, limits, deduplication, the insulin lane and the meal sequencing. The host is faked.
 @MainActor @Suite("Garmin command processor") struct GarminCommandProcessorTests {
     private let start = Date(timeIntervalSince1970: 1_800_000_000)
-    private let clock: TestClock
-    private let host: FakeHost
+    private let clock: GarminTestClock
+    private let host: GarminFakeCommandHost
     private let authorization: GarminCommandAuthorization
     private let lane: GarminCommandInsulinLane
-    private let logs: LogLines
+    private let store: GarminCommandMemoryStore
+    private let logs: GarminLogLines
     private let processor: GarminCommandProcessor
     /// The command app of the host's settings below: a Trio watchface with commands on.
     private let appUUID = GarminWatchControls.appUUID!
     private let complicationUUID = GarminWatchface.complication.watchfaceUUID!
 
     init() {
-        clock = TestClock(start)
-        host = FakeHost()
+        clock = GarminTestClock(start)
+        host = GarminFakeCommandHost(clock: clock)
         authorization = GarminCommandAuthorization()
-        lane = GarminCommandInsulinLane()
-        logs = LogLines()
+        store = GarminCommandMemoryStore()
+        lane = GarminCommandInsulinLane(store: store)
+        logs = GarminLogLines()
         var settings = GarminWatchSettings()
         settings.watchface = .trio
         settings.isCommandControlEnabled = true
@@ -32,6 +34,7 @@ import Testing
         processor = GarminCommandProcessor(
             host: host,
             authorization: authorization,
+            store: store,
             insulinLane: lane,
             now: { [clock] in clock.now },
             log: { [logs] in logs.record($0) }
@@ -389,7 +392,8 @@ import Testing
 
         clock.advance(by: GarminCommandProcessor.minimumBolusInterval - 1)
         #expect(await processor.process(request(.bolus(1))).acknowledged == false)
-        #expect(await processor.process(request(.mealBolus(carbs: 20, bolus: 1))).ackCode == .partialFailure)
+        #expect(await processor.process(request(.mealBolus(carbs: 20, bolus: 1))) == .failure("A bolus was given in the last 6 minutes."))
+        #expect(host.carbCalls.isEmpty, "The hold is checked before the carbs")
         #expect(logs.lines.contains { $0.contains("previous watch bolus may not be in pump history yet") })
 
         clock.advance(by: 1)
@@ -434,6 +438,47 @@ import Testing
         #expect(host.bolusCalls.isEmpty)
     }
 
+    @Test("A meal bolus held back by the hold adds no carbs, and a resend adds none either") func mealBolusHoldAddsNoCarbs() async {
+        #expect(await processor.process(request(.bolus(1))).acknowledged)
+        clock.advance(by: 60)
+
+        let meal = request(.mealBolus(carbs: 40, bolus: 3))
+        let refused = await processor.process(meal)
+        #expect(refused == .failure("A bolus was given in the last 6 minutes."), "Nothing logged, so no partial failure")
+        #expect(await processor.process(meal) == refused)
+        #expect(await processor.process(request(.mealBolus(carbs: 40, bolus: 3))) == refused)
+        #expect(host.carbCalls.isEmpty)
+        #expect(host.bolusCalls == [1])
+    }
+
+    @Test("A meal bolus without recent glucose adds no carbs", arguments: [nil, 15 * 60 + 1] as [TimeInterval?])
+    func mealBolusStaleGlucoseAddsNoCarbs(glucoseAge: TimeInterval?) async {
+        host.glucoseAge = glucoseAge
+
+        let result = await processor.process(request(.mealBolus(carbs: 40, bolus: 3)))
+
+        #expect(result == .failure("No recent glucose reading."))
+        #expect(host.calls.isEmpty)
+        #expect(host.recommendationReads.isEmpty)
+    }
+
+    @Test("A meal bolus refused before its carbs leaves no hold behind") func mealBolusRefusedBeforeCarbsNoHold() async {
+        host.glucoseAge = nil
+        #expect(await processor.process(request(.mealBolus(carbs: 40, bolus: 3))).acknowledged == false)
+
+        host.glucoseAge = 60
+        #expect(await processor.process(request(.bolus(1))).acknowledged)
+    }
+
+    @Test("A meal bolus over the recommendation keeps its carbs: the recommendation counts them") func mealBolusOverRecommendation() async {
+        host.recommendation = 1
+        let result = await processor.process(request(.mealBolus(carbs: 40, bolus: 3)))
+
+        #expect(result == GarminWatchCommandResult(acknowledged: false, ackCode: .partialFailure, message: "Carbs logged. No bolus was delivered."))
+        #expect(host.carbCalls.count == 1)
+        #expect(host.bolusCalls.isEmpty)
+    }
+
     // MARK: - Deduplication
 
     @Test("A completed duplicate replays its result without executing again") func completedDuplicate() async {
@@ -456,7 +501,7 @@ import Testing
     }
 
     @Test("A duplicate of an in-flight request gets in_progress") func inFlightDuplicate() async {
-        host.carbsGate = TestGate()
+        host.carbsGate = GarminTestGate()
         let request = request(.carbs(10))
         let pending = Task { await processor.process(request) }
         await host.carbsGate?.waitForArrivals()
@@ -615,7 +660,7 @@ import Testing
         "A switch toggled off and on while carbs wait for the maximum adds nothing",
         arguments: [false, true]
     ) func carbsRevokedWhileWaiting(isMeal: Bool) async {
-        host.maxCarbsGate = TestGate()
+        host.maxCarbsGate = GarminTestGate()
         let command: GarminWatchCommand = isMeal ? .mealBolus(carbs: 40, bolus: 3) : .carbs(40)
         let pending = Task { await processor.process(request(command)) }
         await host.maxCarbsGate?.waitForArrivals()
@@ -634,7 +679,7 @@ import Testing
     ) func carbsRevokedByWatchface(from: GarminWatchface, to: GarminWatchface) async {
         changeSettings { $0.watchface = from }
         let sender = GarminCommandApp(host.commandSettings).appUUID!
-        host.maxCarbsGate = TestGate()
+        host.maxCarbsGate = GarminTestGate()
         let pending = Task { await processor.process(request(.carbs(40), app: sender)) }
         await host.maxCarbsGate?.waitForArrivals()
 
@@ -646,7 +691,7 @@ import Testing
     }
 
     @Test("A watchface switch that keeps the command app does not revoke a waiting command") func watchfaceSwitchKeepsCommandApp() async {
-        host.maxCarbsGate = TestGate()
+        host.maxCarbsGate = GarminTestGate()
         let pending = Task { await processor.process(request(.carbs(40))) }
         await host.maxCarbsGate?.waitForArrivals()
 
@@ -658,7 +703,7 @@ import Testing
     }
 
     @Test("A command that waits while the watchface is switched away and back is still revoked") func watchfaceRoundTrip() async {
-        host.maxCarbsGate = TestGate()
+        host.maxCarbsGate = GarminTestGate()
         let pending = Task { await processor.process(request(.carbs(40))) }
         await host.maxCarbsGate?.waitForArrivals()
 
@@ -671,12 +716,12 @@ import Testing
     }
 
     @Test("A bolus waiting in the lane when the watchface is switched is not delivered") func bolusRevokedByWatchface() async {
-        host.bolusGate = TestGate()
+        host.bolusGate = GarminTestGate()
         host.bolusErrors = [SmartwatchActionError.exceedsMaximum]
         let first = Task { await processor.process(request(.bolus(2))) }
         await host.bolusGate?.waitForArrivals()
         let second = Task { await processor.process(request(.bolus(1))) }
-        #expect(await eventually { await lane.waitingCount == 1 })
+        #expect(await garminEventually { await lane.waitingCount == 1 })
 
         changeSettings { $0.watchface = .complication }
         host.bolusGate?.open()
@@ -693,7 +738,7 @@ import Testing
     }
 
     @Test("A switch toggled while meal carbs are added stops the bolus") func mealRevokedDuringCarbs() async {
-        host.carbsGate = TestGate()
+        host.carbsGate = GarminTestGate()
         let pending = Task { await processor.process(request(.mealBolus(carbs: 40, bolus: 3))) }
         await host.carbsGate?.waitForArrivals()
 
@@ -712,7 +757,7 @@ import Testing
     ) func adjustmentRevokedWhileLoading(command: GarminWatchCommand) async {
         host.overrides = [preset("Sport", id: "sport")]
         host.tempTargets = [preset("Walk", id: "walk")]
-        host.presetsGate = TestGate()
+        host.presetsGate = GarminTestGate()
         let pending = Task { await processor.process(request(command)) }
         await host.presetsGate?.waitForArrivals()
 
@@ -727,13 +772,13 @@ import Testing
         "A bolus waiting in the lane while a switch is toggled is not delivered",
         arguments: [false, true]
     ) func bolusRevokedInLane(bolusSwitch: Bool) async {
-        host.bolusGate = TestGate()
+        host.bolusGate = GarminTestGate()
         // the first is refused with nothing delivered, so the lane hold can't be what stops the second
         host.bolusErrors = [SmartwatchActionError.exceedsMaximum]
         let first = Task { await processor.process(request(.bolus(2))) }
         await host.bolusGate?.waitForArrivals()
         let second = Task { await processor.process(request(.bolus(1))) }
-        #expect(await eventually { await lane.waitingCount == 1 })
+        #expect(await garminEventually { await lane.waitingCount == 1 })
 
         toggleOffAndOn(bolusSwitch: bolusSwitch)
         host.bolusGate?.open()
@@ -748,16 +793,19 @@ import Testing
         "A request that expires while it waits in the lane is not delivered",
         arguments: [false, true]
     ) func expiredInLane(isMeal: Bool) async {
-        host.bolusGate = TestGate()
+        // parked before its enactment is recorded, so a meal's pre-checks see no hold and its
+        // carbs are added before it waits in the lane
+        host.recommendationGate = GarminTestGate()
         host.bolusErrors = [SmartwatchActionError.exceedsMaximum]
         let first = Task { await processor.process(request(.bolus(2))) }
-        await host.bolusGate?.waitForArrivals()
+        await host.recommendationGate?.waitForArrivals()
         let command: GarminWatchCommand = isMeal ? .mealBolus(carbs: 30, bolus: 1) : .bolus(1)
         let second = Task { await processor.process(request(command, age: GarminCommandProcessor.maximumCommandAge - 10)) }
-        #expect(await eventually { await lane.waitingCount == 1 })
+        #expect(await garminEventually { await lane.waitingCount == 1 })
+        #expect(host.carbCalls.count == (isMeal ? 1 : 0))
 
         clock.advance(by: 20)
-        host.bolusGate?.open()
+        host.recommendationGate?.open()
         #expect(await first.value.acknowledged == false)
         let result = await second.value
 
@@ -768,11 +816,11 @@ import Testing
     }
 
     @Test("A second insulin request waits for the first, then is held back") func insulinSerialized() async {
-        host.bolusGate = TestGate()
+        host.bolusGate = GarminTestGate()
         let first = Task { await processor.process(request(.bolus(2))) }
         await host.bolusGate?.waitForArrivals()
         let second = Task { await processor.process(request(.bolus(1))) }
-        #expect(await eventually { await lane.waitingCount == 1 }, "Parked while the host delivers the first")
+        #expect(await garminEventually { await lane.waitingCount == 1 }, "Parked while the host delivers the first")
         #expect(host.bolusCalls == [2])
 
         host.bolusGate?.open()
@@ -800,7 +848,7 @@ import Testing
 
 // MARK: - Test doubles
 
-@MainActor private final class FakeHost: GarminCommandHost {
+@MainActor final class GarminFakeCommandHost: GarminCommandHost {
     enum Call: Equatable {
         case bolus(Double)
         case carbs(Double, Date)
@@ -810,6 +858,22 @@ import Testing
 
     var commandSettings = GarminWatchSettings()
     private(set) var calls: [Call] = []
+    private let clock: GarminTestClock
+
+    init(clock: GarminTestClock) {
+        self.clock = clock
+    }
+
+    /// Age of the newest glucose reading on the test clock; `nil`: none.
+    var glucoseAge: TimeInterval? = 60
+    /// Generous by default, so only tests about it reach it.
+    var recommendation: Double = 100
+    /// Added per gram of carbs the host was given, for a recommendation that counts them.
+    var recommendationPerGram: Double = 0
+    var recommendationError: Error?
+    /// The number of carb entries the host had at each recommendation read.
+    private(set) var recommendationReads: [Int] = []
+    private(set) var glucoseReads = 0
 
     /// One entry per bolus call, used up in order; `nil` or empty delivers.
     var bolusErrors: [Error?] = []
@@ -826,14 +890,19 @@ import Testing
     var volumes: [Double] = []
 
     /// Park a call after it was recorded, so the request counts as received by the host.
-    var bolusGate: TestGate?
-    var carbsGate: TestGate?
+    var bolusGate: GarminTestGate?
+    var carbsGate: GarminTestGate?
     /// Park a read before the processor gets its answer.
-    var presetsGate: TestGate?
-    var maxCarbsGate: TestGate?
+    var presetsGate: GarminTestGate?
+    var maxCarbsGate: GarminTestGate?
+    var recommendationGate: GarminTestGate?
 
     var bolusCalls: [Double] {
         calls.compactMap { if case let .bolus(units) = $0 { return units } else { return nil } }
+    }
+
+    var carbCalls: [Double] {
+        calls.compactMap { if case let .carbs(grams, _) = $0 { return grams } else { return nil } }
     }
 
     func deliverBolus(_ units: Double) async throws -> Double {
@@ -884,10 +953,22 @@ import Testing
     }
 
     func supportedBolusVolumes() async -> [Double] { volumes }
+
+    func latestGlucoseDate() async -> Date? {
+        glucoseReads += 1
+        return glucoseAge.map { clock.now.addingTimeInterval(-$0) }
+    }
+
+    func recommendedBolus() async throws -> Double {
+        recommendationReads.append(carbCalls.count)
+        await recommendationGate?.pass()
+        if let recommendationError { throw recommendationError }
+        return recommendation + recommendationPerGram * carbCalls.reduce(0, +)
+    }
 }
 
 /// Parks callers until opened, and lets a test wait until a call arrived.
-@MainActor private final class TestGate {
+@MainActor final class GarminTestGate {
     private var isOpen = false
     private var arrivals = 0
     private var parked: [CheckedContinuation<Void, Never>] = []
@@ -915,7 +996,7 @@ import Testing
     }
 }
 
-private final class TestClock: @unchecked Sendable {
+final class GarminTestClock: @unchecked Sendable {
     private let lock = NSLock()
     private var current: Date
 
@@ -930,7 +1011,7 @@ private final class TestClock: @unchecked Sendable {
     }
 }
 
-private final class LogLines: @unchecked Sendable {
+final class GarminLogLines: @unchecked Sendable {
     private let lock = NSLock()
     private var stored: [String] = []
 
@@ -943,10 +1024,60 @@ private final class LogLines: @unchecked Sendable {
 
 private struct UnexpectedError: Error {}
 
-@MainActor private func eventually(_ condition: () async -> Bool) async -> Bool {
+@MainActor func garminEventually(_ condition: () async -> Bool) async -> Bool {
     for _ in 0 ..< 400 {
         if await condition() { return true }
         try? await Task.sleep(nanoseconds: 5_000_000)
     }
     return await condition()
+}
+
+/// A processor over a fake host with watch commands and bolus on, for suites in other files.
+/// `relaunched()` is a new processor (new cache, lane and authorization) on the same store, host
+/// and clock, as after an app relaunch.
+@MainActor struct GarminProcessorRig {
+    static let start = Date(timeIntervalSince1970: 1_800_000_000)
+    static let appUUID = GarminWatchControls.appUUID!
+
+    let clock: GarminTestClock
+    let host: GarminFakeCommandHost
+    let store: GarminCommandStore
+    let logs: GarminLogLines
+    let lane: GarminCommandInsulinLane
+    let processor: GarminCommandProcessor
+
+    init(store: GarminCommandStore = GarminCommandMemoryStore(), clock: GarminTestClock = GarminTestClock(start), host: GarminFakeCommandHost? = nil) {
+        self.clock = clock
+        self.store = store
+        let logs = GarminLogLines()
+        self.logs = logs
+        let host = host ?? {
+            let host = GarminFakeCommandHost(clock: clock)
+            var settings = GarminWatchSettings()
+            settings.watchface = .trio
+            settings.isCommandControlEnabled = true
+            settings.isBolusCommandEnabled = true
+            host.commandSettings = settings
+            return host
+        }()
+        self.host = host
+        let lane = GarminCommandInsulinLane(store: store)
+        self.lane = lane
+        processor = GarminCommandProcessor(
+            host: host,
+            authorization: GarminCommandAuthorization(),
+            store: store,
+            insulinLane: lane,
+            now: { [clock] in clock.now },
+            log: { [logs] in logs.record($0) }
+        )
+    }
+
+    func relaunched() -> GarminProcessorRig {
+        GarminProcessorRig(store: store, clock: clock, host: host)
+    }
+
+    func request(_ command: GarminWatchCommand, id: UUID = UUID(), age: TimeInterval = 5) -> GarminWatchCommandRequest {
+        GarminWatchCommandRequest(requestID: id, appUUID: Self.appUUID, date: clock.now.addingTimeInterval(-age), command: command)
+    }
 }

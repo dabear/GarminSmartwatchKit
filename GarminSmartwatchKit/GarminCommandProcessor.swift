@@ -38,6 +38,12 @@ protocol GarminCommandProcessing {
     func maximumBolus() async -> Double?
     func maximumCarbEntry() async -> Double?
     func supportedBolusVolumes() async -> [Double]
+    /// When the newest stored glucose reading was taken; `nil` when there is none recent or it
+    /// can't be read.
+    func latestGlucoseDate() async -> Date?
+    /// The host's bolus recommendation now with no carbs added, in units; carbs already added
+    /// count. Throws `SmartwatchActionError`.
+    func recommendedBolus() async throws -> Double
 }
 
 /// Revocation epoch for watch commands; a command admitted under an older epoch was revoked.
@@ -70,11 +76,20 @@ final class GarminCommandAuthorization: @unchecked Sendable {
 /// `GarminCommandProcessor.minimumBolusInterval`, even when the pump refused it, since pump history
 /// may not show it yet and a refusal can still mean partial delivery. Only an error that means
 /// nothing reached the pump withdraws the record.
+///
+/// The record lives in a `GarminCommandStore`, so the hold outlasts an app relaunch.
 actor GarminCommandInsulinLane {
     private var isOccupied = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
-    /// Last bolus handed to the host through the lane; pump history may not show it yet.
-    private(set) var lastEnactment: Date?
+    private let store: GarminCommandStore
+
+    init(store: GarminCommandStore = GarminCommandDefaultsStore.standard) {
+        self.store = store
+    }
+
+    /// Last bolus handed to the host through a lane, in this launch or an earlier one; pump
+    /// history may not show it yet.
+    var lastEnactment: Date? { store.lastBolusEnactment }
 
     var waitingCount: Int { waiters.count }
 
@@ -95,13 +110,16 @@ actor GarminCommandInsulinLane {
         }
     }
 
+    /// Stored before the host is called.
     func recordEnactment(at date: Date) {
-        lastEnactment = date
+        store.setLastBolusEnactment(date)
     }
 
-    /// Puts back what `recordEnactment` replaced when the request never reached the pump.
-    func restoreEnactment(_ date: Date?) {
-        lastEnactment = date
+    /// Puts back what `recordEnactment(at: recorded)` replaced when the request never reached the
+    /// pump; a newer record (another lane on the same store) stays.
+    func restoreEnactment(_ previous: Date?, replacing recorded: Date) {
+        guard store.lastBolusEnactment == recorded else { return }
+        store.setLastBolusEnactment(previous)
     }
 }
 
@@ -111,8 +129,20 @@ actor GarminCommandInsulinLane {
 /// switches) with no `await` between the check and the host call; both run on the main actor.
 ///
 /// Tai also ran Trio's 20% recent-bolus check before each watch bolus. The host deliberately
-/// offers no such check, so only the insulin lane's `minimumBolusInterval` hold remains;
-/// maximum bolus, maximum IOB, maximum carbs and rounding are the host's.
+/// offers no such check: Trio's host skips it for watch boluses and relies on the plugin
+/// instead, as for Luped. What stands in for it here, for every bolus and meal bolus, inside the
+/// insulin lane right before the final check:
+/// - the newest glucose reading is at most `maximumGlucoseAge` old;
+/// - the units, rounded down to a supported volume, are at most the host's recommendation read
+///   then (after a meal's carbs were added, so it counts them and every bolus so far), rounded
+///   the same way; nothing when it recommends 0 U or less or can't recommend;
+/// - the `minimumBolusInterval` hold, kept across relaunches.
+/// There is no forced bolus. Maximum bolus, maximum IOB, maximum carbs and rounding are the
+/// host's.
+///
+/// A meal bolus is checked for everything that can be known before its carbs are added (freshness,
+/// switches, the hold, glucose age) before they are, so a refused one adds nothing and a resend
+/// can't log the carbs twice.
 @MainActor final class GarminCommandProcessor: GarminCommandProcessing {
     /// The watch talks to the phone directly over Bluetooth and a command arrives within seconds,
     /// so two minutes only keeps a late or replayed command from executing long after it was confirmed.
@@ -121,6 +151,11 @@ actor GarminCommandInsulinLane {
     static let maximumCommandLead: TimeInterval = 60
     /// How long a watch bolus handed to the host holds back the next watch insulin command.
     static let minimumBolusInterval: TimeInterval = 6 * 60
+    /// A watch bolus needs a glucose reading at most this old (Luped's limit); on the watch the
+    /// user may not see that glucose is missing.
+    static let maximumGlucoseAge: TimeInterval = 15 * 60
+    /// Tolerance for comparing rounded volumes.
+    static let volumeTolerance = 0.0001
 
     /// Weak: the host owns the processor.
     private weak var host: GarminCommandHost?
@@ -130,18 +165,21 @@ actor GarminCommandInsulinLane {
     private let now: () -> Date
     private let log: (String) -> Void
 
+    /// `cache` and `insulinLane` default to ones over `store`, which defaults to the plugin's
+    /// `UserDefaults` store.
     init(
         host: GarminCommandHost,
         authorization: GarminCommandAuthorization,
-        cache: GarminCommandRequestCache = GarminCommandRequestCache(),
-        insulinLane: GarminCommandInsulinLane = GarminCommandInsulinLane(),
+        store: GarminCommandStore = GarminCommandDefaultsStore.standard,
+        cache: GarminCommandRequestCache? = nil,
+        insulinLane: GarminCommandInsulinLane? = nil,
         now: @escaping () -> Date = Date.init,
         log: @escaping (String) -> Void = { _ in }
     ) {
         self.host = host
         self.authorization = authorization
-        self.cache = cache
-        self.insulinLane = insulinLane
+        self.cache = cache ?? GarminCommandRequestCache(store: store)
+        self.insulinLane = insulinLane ?? GarminCommandInsulinLane(store: store)
         self.now = now
         self.log = log
     }
@@ -158,6 +196,9 @@ actor GarminCommandInsulinLane {
         case let .completed(result):
             log("Garmin: duplicate \(name) request - returning cached result")
             return result
+        case .interrupted:
+            log("Garmin: duplicate \(name) request from before the app restarted, outcome unknown - rejected")
+            return .failure(GarminCommandMessage.interrupted)
         case .inProgress:
             log("Garmin: duplicate \(name) request still in progress - rejected")
             return GarminWatchCommandResult(acknowledged: false, ackCode: .inProgress, message: GarminCommandMessage.inProgress)
@@ -351,6 +392,10 @@ actor GarminCommandInsulinLane {
         request: GarminWatchCommandRequest,
         grant: UInt64
     ) async -> GarminWatchCommandResult {
+        if let message = await mealBolusRejectionBeforeCarbs(request: request, grant: grant) {
+            return .failure(message)
+        }
+
         switch await addCarbs(grams, request: request, grant: grant) {
         case .added:
             break
@@ -368,6 +413,24 @@ actor GarminCommandInsulinLane {
         case .failed:
             return GarminWatchCommandResult(acknowledged: false, ackCode: .partialFailure, message: GarminCommandMessage.mealBolusFailed)
         }
+    }
+
+    /// The bolus checks that can be made before a meal's carbs are added, so a meal bolus that
+    /// would be refused for them adds nothing. The insulin lane checks all of them again.
+    /// The recommendation is not among them: it must count the carbs.
+    private func mealBolusRejectionBeforeCarbs(request: GarminWatchCommandRequest, grant: UInt64) async -> String? {
+        if let rejection = expiryRejection(for: request) ?? authorizationRejection(for: request, grant: grant) {
+            return rejection.message
+        }
+        guard let host else { return GarminCommandMessage.commandsDisabled }
+        if let message = glucoseRejection(await host.latestGlucoseDate(), request: request) {
+            return message
+        }
+        // read last, closest to the carbs
+        if let message = holdRejection(await insulinLane.lastEnactment) {
+            return message
+        }
+        return nil
     }
 
     private func addCarbs(_ grams: Int, request: GarminWatchCommandRequest, grant: UInt64) async -> CarbsOutcome {
@@ -411,24 +474,43 @@ actor GarminCommandInsulinLane {
         }
 
         let previousEnactment = await insulinLane.lastEnactment
-        if let previousEnactment, now().timeIntervalSince(previousEnactment) < Self.minimumBolusInterval {
-            log("Garmin: bolus rejected - previous watch bolus may not be in pump history yet")
-            return .rejected(GarminCommandMessage.recentBolus)
+        if let message = holdRejection(previousEnactment) {
+            return .rejected(message)
+        }
+
+        // Read now, in the lane, so they count every bolus before this one and a meal's carbs.
+        guard let host else { return .rejected(GarminCommandMessage.commandsDisabled) }
+        if let message = glucoseRejection(await host.latestGlucoseDate(), request: request) {
+            return .rejected(message)
+        }
+        let recommendation: Double
+        do {
+            recommendation = try await host.recommendedBolus()
+        } catch {
+            log("Garmin: bolus rejected - no recommendation from the host (\(Self.logDescription(error)))")
+            return .rejected(message(for: error, action: .bolus))
+        }
+        let volumes = await host.supportedBolusVolumes()
+        let requested = NSDecimalNumber(decimal: units).doubleValue
+        guard Self.isWithinRecommendation(requested, recommendation: recommendation, volumes: volumes) else {
+            log("Garmin: bolus rejected - above the host's recommendation, or none recommended")
+            return .rejected(GarminCommandMessage.bolusAboveRecommendation)
         }
 
         // recorded before the request, since a pump error can still mean partial delivery
-        await insulinLane.recordEnactment(at: now())
+        let enactment = now()
+        await insulinLane.recordEnactment(at: enactment)
 
         switch finalCheck(for: request, grant: grant) {
         case let .closed(result):
-            await insulinLane.restoreEnactment(previousEnactment)
+            await insulinLane.restoreEnactment(previousEnactment, replacing: enactment)
             return .rejected(result.message)
         case let .open(host):
             do {
-                _ = try await host.deliverBolus(NSDecimalNumber(decimal: units).doubleValue)
+                _ = try await host.deliverBolus(requested)
                 return .delivered
             } catch let error as SmartwatchActionError where !error.mayHaveReachedPump {
-                await insulinLane.restoreEnactment(previousEnactment)
+                await insulinLane.restoreEnactment(previousEnactment, replacing: enactment)
                 log("Garmin: bolus refused, nothing sent to the pump (\(Self.logDescription(error)))")
                 return .rejected(message(for: error, action: .bolus))
             } catch {
@@ -436,6 +518,37 @@ actor GarminCommandInsulinLane {
                 return .failed
             }
         }
+    }
+
+    /// The `minimumBolusInterval` hold after the last watch bolus handed to the host.
+    private func holdRejection(_ lastEnactment: Date?) -> String? {
+        guard let lastEnactment, now().timeIntervalSince(lastEnactment) < Self.minimumBolusInterval else { return nil }
+        log("Garmin: bolus rejected - previous watch bolus may not be in pump history yet")
+        return GarminCommandMessage.recentBolus
+    }
+
+    /// Refuses without a glucose reading from the last `maximumGlucoseAge`.
+    private func glucoseRejection(_ latestGlucose: Date?, request: GarminWatchCommandRequest) -> String? {
+        guard let latestGlucose, now().timeIntervalSince(latestGlucose) <= Self.maximumGlucoseAge else {
+            log("Garmin: \(request.command.name) rejected - no glucose reading in the last 15 minutes")
+            return GarminCommandMessage.noRecentGlucose
+        }
+        return nil
+    }
+
+    /// Luped's rule: the requested units, rounded down to a supported volume, may not exceed the
+    /// recommendation rounded the same way; nothing when the host recommends 0 U or less.
+    static func isWithinRecommendation(_ units: Double, recommendation: Double, volumes: [Double]) -> Bool {
+        guard units.isFinite, recommendation.isFinite, recommendation > 0 else { return false }
+        return roundToSupportedVolume(units, volumes: volumes)
+            <= roundToSupportedVolume(recommendation, volumes: volumes) + volumeTolerance
+    }
+
+    /// Rounds down to a volume the pump supports, as `PumpManager` does by default; unchanged
+    /// without volumes (no pump), where the host refuses.
+    static func roundToSupportedVolume(_ units: Double, volumes: [Double]) -> Double {
+        guard !volumes.isEmpty else { return units }
+        return volumes.filter { $0 <= units }.max() ?? 0
     }
 
     // MARK: - Adjustments
@@ -637,6 +750,9 @@ private extension SmartwatchActionError {
 
 /// User-facing acks; Tai's wording where it had one.
 private enum GarminCommandMessage {
+    static var interrupted: String {
+        LocalizedString("Interrupted by an app restart. Check carbs and pump history before repeating.", comment: "Garmin watch command ack")
+    }
     static var inProgress: String { LocalizedString("Request is already in progress.", comment: "Garmin watch command ack") }
     static var requestIDReused: String { LocalizedString("Request ID was already used.", comment: "Garmin watch command ack") }
     static var tooManyRequests: String { LocalizedString("Too many requests in progress. Please try again.", comment: "Garmin watch command ack") }

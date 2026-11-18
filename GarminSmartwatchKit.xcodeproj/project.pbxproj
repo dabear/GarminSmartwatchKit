@@ -7,11 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		02C8D07EDBF6E4C4859905AD /* GarminCommandStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A123ED89887B5605F63E332 /* GarminCommandStore.swift */; };
 		15D761D07496D55F6ED49C04 /* LoopKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D96875D9188E311B80D382A /* LoopKit.framework */; };
 		1E5B28B6505CF2E0CBA4FA9B /* GarminSmartwatchKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 2DA6A781E03AC2D6D5841B23 /* GarminSmartwatchKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		2F1FA8EB8DC1D13263898971 /* GarminCommandEnvelopeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA582A3AD33ED86D480120EC /* GarminCommandEnvelopeTests.swift */; };
 		36124E40766311996853FE48 /* GarminSmartwatchKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2DA6A781E03AC2D6D5841B23 /* GarminSmartwatchKit.framework */; };
 		3FC902A93F3C027CDF2DA5FE /* GarminCommandProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374C46E058191BB947BFEF37 /* GarminCommandProcessor.swift */; };
+		467A338C82A57C16036FEF51 /* GarminSmartwatchManager+BolusChecks.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEF41CF0A38718A84AC20B5C /* GarminSmartwatchManager+BolusChecks.swift */; };
 		46EB8E5256CED9C88D52F476 /* GarminCommandEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0236F3AC5E7121FBB24B5B4A /* GarminCommandEnvelope.swift */; };
 		4A3FEE0D147F77267449F3B0 /* GarminWatchStateSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 854AF36E1DA060822063BF89 /* GarminWatchStateSnapshotTests.swift */; };
 		4A57D3A79CC3B65179B4C00E /* LoopKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D96875D9188E311B80D382A /* LoopKit.framework */; };
@@ -22,8 +24,10 @@
 		8415D9D62D7AC791CC052D7F /* GarminSmartwatchManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8ACBFAF3FE77B807E8BBE52 /* GarminSmartwatchManager.swift */; };
 		940AF746DC0767F83F800802 /* ConnectIQ in Frameworks */ = {isa = PBXBuildFile; productRef = 6CDD12731F9D9DCCDE9F5298 /* ConnectIQ */; };
 		9CCC2B13B52B84517DE424D8 /* GarminWatchSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FD370678755055717085FB6 /* GarminWatchSettings.swift */; };
+		9F5A5774B574AB7ADA6C7178 /* GarminBolusChecksTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE41678819AB929835DDE9E5 /* GarminBolusChecksTests.swift */; };
 		A374B4DB8C2ED1A3A66C41F1 /* LoopKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D96875D9188E311B80D382A /* LoopKit.framework */; };
 		AE7A4095529E3FDCFD9C09CC /* ConnectIQ in Frameworks */ = {isa = PBXBuildFile; productRef = BE815B4AAAAD163C493FB99F /* ConnectIQ */; };
+		B2F51FDF2E35B898DB509DD1 /* GarminCommandStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36AE126DA48245C0A37B30C /* GarminCommandStoreTests.swift */; };
 		B7BD2C2C3910BAA476A299CC /* LoopKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D96875D9188E311B80D382A /* LoopKit.framework */; };
 		BC183CB9FCFDD28006573B86 /* LocalizedString.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AD1557BB7D9BE8671B029FF /* LocalizedString.swift */; };
 		BD234848CAD6E511E5BF94B1 /* GarminSmartwatchKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2DA6A781E03AC2D6D5841B23 /* GarminSmartwatchKit.framework */; };
@@ -117,6 +121,7 @@
 		3AD1557BB7D9BE8671B029FF /* LocalizedString.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizedString.swift; sourceTree = "<group>"; };
 		4064CF22ABF271B91CB57D4A /* LocalizedString.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizedString.swift; sourceTree = "<group>"; };
 		6392D7D6734286C1C134E326 /* GarminCommandRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarminCommandRouterTests.swift; sourceTree = "<group>"; };
+		6A123ED89887B5605F63E332 /* GarminCommandStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarminCommandStore.swift; sourceTree = "<group>"; };
 		6CC9EF99454AE69C040724E8 /* GarminCommandRequestCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarminCommandRequestCache.swift; sourceTree = "<group>"; };
 		716524D13DB5C50B0AEDBED1 /* GarminSmartwatchPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarminSmartwatchPlugin.swift; sourceTree = "<group>"; };
 		7D59FB7D2D1A761D4427A6FD /* GarminWatchCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarminWatchCommand.swift; sourceTree = "<group>"; };
@@ -124,11 +129,14 @@
 		81C47ACCE51A829ABAB17EBB /* GarminWatchSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarminWatchSettingsTests.swift; sourceTree = "<group>"; };
 		854AF36E1DA060822063BF89 /* GarminWatchStateSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarminWatchStateSnapshotTests.swift; sourceTree = "<group>"; };
 		8EEA848DBBF332512D52D4FD /* GarminCommandProcessorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarminCommandProcessorTests.swift; sourceTree = "<group>"; };
+		BEF41CF0A38718A84AC20B5C /* GarminSmartwatchManager+BolusChecks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GarminSmartwatchManager+BolusChecks.swift"; sourceTree = "<group>"; };
 		C5713D1B76F19E19036C5890 /* LoopKitUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = LoopKitUI.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		CA582A3AD33ED86D480120EC /* GarminCommandEnvelopeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarminCommandEnvelopeTests.swift; sourceTree = "<group>"; };
 		D5C2C511BCBA9578BB374CDD /* GarminCommandRequestCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarminCommandRequestCacheTests.swift; sourceTree = "<group>"; };
 		D8ACBFAF3FE77B807E8BBE52 /* GarminSmartwatchManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarminSmartwatchManager.swift; sourceTree = "<group>"; };
 		E13ACB2B4BDEC8FD9E506A50 /* GarminWatchState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarminWatchState.swift; sourceTree = "<group>"; };
+		E36AE126DA48245C0A37B30C /* GarminCommandStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarminCommandStoreTests.swift; sourceTree = "<group>"; };
+		EE41678819AB929835DDE9E5 /* GarminBolusChecksTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarminBolusChecksTests.swift; sourceTree = "<group>"; };
 		F9F0B5A44B42D80C28876EFD /* GarminSmartwatchManager+UI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GarminSmartwatchManager+UI.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -224,7 +232,9 @@
 				0236F3AC5E7121FBB24B5B4A /* GarminCommandEnvelope.swift */,
 				374C46E058191BB947BFEF37 /* GarminCommandProcessor.swift */,
 				6CC9EF99454AE69C040724E8 /* GarminCommandRequestCache.swift */,
+				6A123ED89887B5605F63E332 /* GarminCommandStore.swift */,
 				D8ACBFAF3FE77B807E8BBE52 /* GarminSmartwatchManager.swift */,
+				BEF41CF0A38718A84AC20B5C /* GarminSmartwatchManager+BolusChecks.swift */,
 				7D59FB7D2D1A761D4427A6FD /* GarminWatchCommand.swift */,
 				0FD370678755055717085FB6 /* GarminWatchSettings.swift */,
 				E13ACB2B4BDEC8FD9E506A50 /* GarminWatchState.swift */,
@@ -236,11 +246,13 @@
 		74D995057D4F3113980BEEE0 /* GarminSmartwatchKitTests */ = {
 			isa = PBXGroup;
 			children = (
+				EE41678819AB929835DDE9E5 /* GarminBolusChecksTests.swift */,
 				0ADA1B44113C2086C5064318 /* GarminCommandAppTests.swift */,
 				CA582A3AD33ED86D480120EC /* GarminCommandEnvelopeTests.swift */,
 				8EEA848DBBF332512D52D4FD /* GarminCommandProcessorTests.swift */,
 				D5C2C511BCBA9578BB374CDD /* GarminCommandRequestCacheTests.swift */,
 				6392D7D6734286C1C134E326 /* GarminCommandRouterTests.swift */,
+				E36AE126DA48245C0A37B30C /* GarminCommandStoreTests.swift */,
 				06526F543313E60BCC731CE6 /* GarminDeliveryTests.swift */,
 				81C47ACCE51A829ABAB17EBB /* GarminWatchSettingsTests.swift */,
 				854AF36E1DA060822063BF89 /* GarminWatchStateSnapshotTests.swift */,
@@ -412,6 +424,8 @@
 				46EB8E5256CED9C88D52F476 /* GarminCommandEnvelope.swift in Sources */,
 				3FC902A93F3C027CDF2DA5FE /* GarminCommandProcessor.swift in Sources */,
 				E27DDF9DB3F434B42C3D60E3 /* GarminCommandRequestCache.swift in Sources */,
+				02C8D07EDBF6E4C4859905AD /* GarminCommandStore.swift in Sources */,
+				467A338C82A57C16036FEF51 /* GarminSmartwatchManager+BolusChecks.swift in Sources */,
 				8415D9D62D7AC791CC052D7F /* GarminSmartwatchManager.swift in Sources */,
 				ED6BE22FDCF7D80D7198F482 /* GarminWatchCommand.swift in Sources */,
 				9CCC2B13B52B84517DE424D8 /* GarminWatchSettings.swift in Sources */,
@@ -432,11 +446,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9F5A5774B574AB7ADA6C7178 /* GarminBolusChecksTests.swift in Sources */,
 				EFC224DAE2430A3B75E29B3C /* GarminCommandAppTests.swift in Sources */,
 				2F1FA8EB8DC1D13263898971 /* GarminCommandEnvelopeTests.swift in Sources */,
 				F92AA15E6973E932ED3F6C0D /* GarminCommandProcessorTests.swift in Sources */,
 				63D76573DFA5F7006A584A0E /* GarminCommandRequestCacheTests.swift in Sources */,
 				5CB019EA7FA9249BAF55DE73 /* GarminCommandRouterTests.swift in Sources */,
+				B2F51FDF2E35B898DB509DD1 /* GarminCommandStoreTests.swift in Sources */,
 				F1B907955DA9FFE3E6E438E7 /* GarminDeliveryTests.swift in Sources */,
 				538F2C5A8AFE18031D2C7474 /* GarminWatchSettingsTests.swift in Sources */,
 				4A3FEE0D147F77267449F3B0 /* GarminWatchStateSnapshotTests.swift in Sources */,

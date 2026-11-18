@@ -28,7 +28,7 @@ import Testing
     }
 
     @Test("A request stays in flight until completed, then replays its result") func testInFlightThenCompleted() async throws {
-        let cache = GarminCommandRequestCache()
+        let cache = GarminCommandRequestCache(store: GarminCommandMemoryStore())
         let key = key()
         let result = GarminWatchCommandResult.success(.carbsLogged, "Carbs logged.")
 
@@ -40,7 +40,7 @@ import Testing
     }
 
     @Test("Reusing a request ID for another command is a conflict") func testConflict() async throws {
-        let cache = GarminCommandRequestCache()
+        let cache = GarminCommandRequestCache(store: GarminCommandMemoryStore())
         let key = key()
 
         _ = try await admitted(cache, key, .carbs(20), at: start)
@@ -49,7 +49,7 @@ import Testing
     }
 
     @Test("The same request ID from another app is a separate request") func testScopedByApp() async {
-        let cache = GarminCommandRequestCache()
+        let cache = GarminCommandRequestCache(store: GarminCommandMemoryStore())
         let requestID = UUID()
 
         #expect(ticket(await cache.admit(key(requestID), command: .cancelOverride, now: start)) != nil)
@@ -57,7 +57,7 @@ import Testing
     }
 
     @Test("Completed entries expire after their lifetime") func testExpiry() async throws {
-        let cache = GarminCommandRequestCache(capacity: 256, lifetime: 15 * 60)
+        let cache = GarminCommandRequestCache(capacity: 256, lifetime: 15 * 60, store: GarminCommandMemoryStore())
         let key = key()
 
         let reservation = try await admitted(cache, key, .cancelOverride, at: start)
@@ -67,7 +67,7 @@ import Testing
     }
 
     @Test("An executing entry outlives its lifetime") func testInFlightNeverExpires() async throws {
-        let cache = GarminCommandRequestCache(capacity: 256, lifetime: 15 * 60)
+        let cache = GarminCommandRequestCache(capacity: 256, lifetime: 15 * 60, store: GarminCommandMemoryStore())
         let key = key()
 
         _ = try await admitted(cache, key, .cancelOverride, at: start)
@@ -75,7 +75,7 @@ import Testing
     }
 
     @Test("A full cache evicts the least recently used completed entry") func testLeastRecentlyUsedEviction() async throws {
-        let cache = GarminCommandRequestCache(capacity: 2, lifetime: 15 * 60)
+        let cache = GarminCommandRequestCache(capacity: 2, lifetime: 15 * 60, store: GarminCommandMemoryStore())
         let first = key()
         let second = key()
 
@@ -91,7 +91,7 @@ import Testing
     }
 
     @Test("Executing entries are never evicted; a full cache rejects instead") func testCapacityKeepsInFlight() async throws {
-        let cache = GarminCommandRequestCache(capacity: 2, lifetime: 15 * 60)
+        let cache = GarminCommandRequestCache(capacity: 2, lifetime: 15 * 60, store: GarminCommandMemoryStore())
         let first = key()
         let second = key()
 
@@ -109,7 +109,7 @@ import Testing
     }
 
     @Test("A stale execution cannot complete a newer admission of the same key") func testStaleCompletion() async throws {
-        let cache = GarminCommandRequestCache(capacity: 256, lifetime: 15 * 60)
+        let cache = GarminCommandRequestCache(capacity: 256, lifetime: 15 * 60, store: GarminCommandMemoryStore())
         let key = key()
         let stale = GarminWatchCommandResult.failure("stale")
         let fresh = GarminWatchCommandResult.success(.carbsLogged, "fresh")
@@ -130,7 +130,7 @@ import Testing
     }
 
     @Test("Expired entries are evicted before live ones") func testExpiredEvictedFirst() async throws {
-        let cache = GarminCommandRequestCache(capacity: 2, lifetime: 15 * 60)
+        let cache = GarminCommandRequestCache(capacity: 2, lifetime: 15 * 60, store: GarminCommandMemoryStore())
         let old = key()
         let recent = key()
 
@@ -139,6 +139,54 @@ import Testing
         #expect(ticket(await cache.admit(key(), command: .cancelOverride, now: start.addingTimeInterval(16 * 60))) != nil)
 
         #expect(await cache.admit(recent, command: .cancelOverride, now: start.addingTimeInterval(16 * 60)) == .inProgress)
+    }
+
+    // MARK: - Across relaunches
+
+    @Test("A completed insulin request replays its result from a new cache on the same store") func testInsulinResultSurvivesRelaunch() async throws {
+        let store = GarminCommandMemoryStore()
+        let key = key()
+        let delivered = GarminWatchCommandResult.success(.genericSuccess, "Bolus started.")
+        let first = GarminCommandRequestCache(store: store)
+        try await first.complete(admitted(first, key, .bolus(1.5), at: start), result: delivered)
+
+        let relaunched = GarminCommandRequestCache(store: store)
+        #expect(await relaunched.admit(key, command: .bolus(1.5), now: start.addingTimeInterval(60)) == .completed(delivered))
+        #expect(await relaunched.admit(key, command: .bolus(2), now: start.addingTimeInterval(60)) == .conflict)
+    }
+
+    @Test("An insulin request admitted but never completed is interrupted after a relaunch", arguments: [
+        GarminWatchCommand.bolus(1), .mealBolus(carbs: 30, bolus: 2)
+    ]) func testInterruptedAfterRelaunch(command: GarminWatchCommand) async throws {
+        let store = GarminCommandMemoryStore()
+        let key = key()
+        _ = try await admitted(GarminCommandRequestCache(store: store), key, command, at: start)
+        #expect(store.insulinRequests.count == 1, "Stored at admission, before anything runs")
+
+        let relaunched = GarminCommandRequestCache(store: store)
+        #expect(await relaunched.admit(key, command: command, now: start.addingTimeInterval(60)) == .interrupted)
+    }
+
+    @Test("Only insulin requests are stored") func testOnlyInsulinStored() async throws {
+        let store = GarminCommandMemoryStore()
+        let cache = GarminCommandRequestCache(store: store)
+        for command in [GarminWatchCommand.carbs(10), .cancelOverride, .activateOverride(name: "Sport"), .cancelTempTarget] {
+            try await cache.complete(admitted(cache, key(), command, at: start), result: done)
+        }
+        #expect(store.insulinRequests.isEmpty)
+    }
+
+    @Test("Stored requests expire with the cache lifetime and are pruned from the store") func testStoredRequestsPruned() async throws {
+        let store = GarminCommandMemoryStore()
+        let old = key()
+        let cache = GarminCommandRequestCache(capacity: 256, lifetime: 15 * 60, store: store)
+        try await cache.complete(admitted(cache, old, .bolus(1), at: start), result: done)
+        _ = try await admitted(cache, key(), .bolus(1), at: start.addingTimeInterval(10 * 60))
+
+        let relaunched = GarminCommandRequestCache(capacity: 256, lifetime: 15 * 60, store: store)
+        let later = start.addingTimeInterval(15 * 60)
+        #expect(ticket(await relaunched.admit(old, command: .bolus(1), now: later)) != nil, "Expired: a new request")
+        #expect(store.insulinRequests.map(\.admittedAt) == [start.addingTimeInterval(10 * 60), later])
     }
 
     @Test("Default limits are 256 entries for 15 minutes") func testDefaults() {
