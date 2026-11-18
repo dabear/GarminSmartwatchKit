@@ -434,14 +434,6 @@ public final class GarminSmartwatchManager: NSObject {
             public static let simulatedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")
                 ?? UUID()
 
-            /// Creates the standard simulated Enduro 3 device
-            public static func createSimulated() -> MockIQDevice {
-                MockIQDevice(
-                    uuid: simulatedUUID,
-                    friendlyName: "Enduro 3 Sim",
-                    modelName: "Enduro 3"
-                )
-            }
 
             /// A mock Garmin Connect's answer: `<scheme>://device-select-resp?name=…&model=…&uuid=…`.
             static func parseSelection(from url: URL) -> [IQDevice] {
@@ -665,11 +657,6 @@ public final class GarminSmartwatchManager: NSObject {
         self.devices = devices
     }
 
-    /// Sends the given watch state data to the debounce subject for eventual broadcast.
-    /// - Parameter data: JSON-encoded data representing the latest watch state.
-    public func sendWatchStateData(_ data: Data) {
-        watchStateSubject.send(data)
-    }
 
     // MARK: - Helper: Sending Messages
 
