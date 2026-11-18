@@ -902,11 +902,13 @@ extension GarminSmartwatchManager: IQUIOverrideDelegate, IQDeviceEventDelegate, 
             guard !self.isDeleted else { return }
 
             if let reply = outcome.reply {
-                if reply[GarminMessageKey.request] as? String == GarminCommandEnvelope.Request.presets.rawValue,
-                   !self.settings.isCommandControlEnabled
-                {
+                let isPresetsReply = reply[GarminMessageKey.request] as? String == GarminCommandEnvelope.Request.presets.rawValue
+                if isPresetsReply, !self.settings.isCommandControlEnabled {
                     // While commands are off the watch apps get only state, as from upstream Trio.
                     self.log("Garmin presets request from \(appName) not answered, commands are off")
+                } else if isPresetsReply, appUUID != self.currentCommandApp.appUUID {
+                    // Only the command app gets the preset list.
+                    self.log("Garmin presets request from \(appName) not answered, it isn't the command app")
                 } else {
                     self.sendTargetedResponse(reply, to: app, appName: appName)
                 }

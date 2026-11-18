@@ -716,6 +716,19 @@ private func carbsCommand(id: String = "3f2b8c1e-4a5d-4e6f-9a7b-1c2d3e4f5a6b") -
         #expect(await rig.eventually { rig.presets(to: rig.complicationUUID).count == before + 1 })
     }
 
+    @Test("Commands on: a presets request from an app that isn't the command app is not answered")
+    func presetsRequestFromOtherAppUnanswered() async {
+        let rig = CommandAppRig(watchface: .trio, commands: true, devices: [0])
+        await rig.attachHost()
+        await rig.settle()
+        let before = rig.presets(to: rig.trioUUID).count
+
+        rig.hear(["v": 1, "req": "presets"], from: rig.trioUUID, on: rig.deviceA)
+        await rig.settle()
+
+        #expect(rig.presets(to: rig.trioUUID).count == before)
+    }
+
     private func presetPushes(commandApp rig: CommandAppRig) async {
         await rig.attachHost()
         rig.manager.pushPresetsToCommandApp(triggeredBy: "Test")
