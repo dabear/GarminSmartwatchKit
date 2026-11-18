@@ -15,6 +15,9 @@ extension GarminSmartwatchManager {
         guard let delegate = smartwatchManagerDelegate else { return nil }
         let since = Date(timeIntervalSinceNow: -GarminCommandProcessor.maximumGlucoseAge)
         let samples = try? await delegate.smartwatchManager(self, glucoseSamplesSince: since)
-        return samples?.map(\.startDate).max()
+        // A reading dated ahead (another app's clock) would look fresh for as long as it is
+        // ahead; up to a minute is clock skew. Manual and display-only readings count, as in Luped.
+        let latest = Date(timeIntervalSinceNow: 60)
+        return samples?.map(\.startDate).filter { $0 <= latest }.max()
     }
 }

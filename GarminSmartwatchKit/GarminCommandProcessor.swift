@@ -64,6 +64,11 @@ final class GarminCommandAuthorization: @unchecked Sendable {
         guard masterTurnedOff || bolusTurnedOff || commandAppChanged else { return }
         lock.withLock { epoch += 1 }
     }
+
+    /// Revokes every command admitted so far, as when the plugin is deleted.
+    func revokeAll() {
+        lock.withLock { epoch += 1 }
+    }
 }
 
 /// Admits one watch insulin command at a time across all request IDs, so each one sees the
@@ -87,6 +92,15 @@ actor GarminCommandInsulinLane {
     /// Last bolus handed to the host through a lane, in this launch or an earlier one; pump
     /// history may not show it yet.
     var lastEnactment: Date? { store.lastBolusEnactment }
+
+    /// The last enactment, moved to `now` if it lies ahead of it (the phone's clock was turned
+    /// back), so the hold lasts at most its interval of real time from then.
+    func lastEnactment(clampedTo now: Date) -> Date? {
+        guard let last = store.lastBolusEnactment else { return nil }
+        guard last > now else { return last }
+        store.setLastBolusEnactment(now)
+        return now
+    }
 
     var waitingCount: Int { waiters.count }
 
@@ -140,18 +154,20 @@ actor GarminCommandInsulinLane {
 @MainActor final class GarminCommandProcessor: GarminCommandProcessing {
     /// The watch talks to the phone directly over Bluetooth and a command arrives within seconds,
     /// so two minutes only keeps a late or replayed command from executing long after it was confirmed.
-    static let maximumCommandAge: TimeInterval = 2 * 60
+    nonisolated static let maximumCommandAge: TimeInterval = 2 * 60
     /// Clock skew tolerance for watches that run slightly ahead of the phone.
-    static let maximumCommandLead: TimeInterval = 60
+    nonisolated static let maximumCommandLead: TimeInterval = 60
     /// How long a watch bolus handed to the host holds back the next watch insulin command.
-    static let minimumBolusInterval: TimeInterval = 6 * 60
+    nonisolated static let minimumBolusInterval: TimeInterval = 6 * 60
     /// A watch bolus needs a glucose reading at most this old (Luped's limit); on the watch the
     /// user may not see that glucose is missing.
-    static let maximumGlucoseAge: TimeInterval = 15 * 60
+    nonisolated static let maximumGlucoseAge: TimeInterval = 15 * 60
 
     /// Weak: the host owns the processor.
     private weak var host: GarminCommandHost?
     private let authorization: GarminCommandAuthorization
+    private let store: GarminCommandStore
+    private var hasLoggedUnreadableStore = false
     private let cache: GarminCommandRequestCache
     private let insulinLane: GarminCommandInsulinLane
     private let now: () -> Date
@@ -170,6 +186,7 @@ actor GarminCommandInsulinLane {
     ) {
         self.host = host
         self.authorization = authorization
+        self.store = store
         self.cache = cache ?? GarminCommandRequestCache(store: store)
         self.insulinLane = insulinLane ?? GarminCommandInsulinLane(store: store)
         self.now = now
@@ -387,7 +404,7 @@ actor GarminCommandInsulinLane {
         request: GarminWatchCommandRequest,
         grant: UInt64
     ) async -> GarminWatchCommandResult {
-        if let message = await mealBolusRejectionBeforeCarbs(request: request, grant: grant) {
+        if let message = await mealBolusRejectionBeforeCarbs(units: units, request: request, grant: grant) {
             return .failure(GarminCommandMessage.beforeCarbs(message))
         }
 
@@ -416,16 +433,25 @@ actor GarminCommandInsulinLane {
 
     /// The bolus checks that can be made before a meal's carbs are added, so a meal bolus that
     /// would be refused for them adds nothing. The insulin lane checks all of them again.
-    private func mealBolusRejectionBeforeCarbs(request: GarminWatchCommandRequest, grant: UInt64) async -> String? {
+    private func mealBolusRejectionBeforeCarbs(units: Decimal, request: GarminWatchCommandRequest, grant: UInt64) async -> String? {
         if let rejection = expiryRejection(for: request) ?? authorizationRejection(for: request, grant: grant) {
             return rejection.message
         }
         guard let host else { return GarminCommandMessage.commandsDisabled }
+        // The host refuses these after the carbs; known now, so nothing is logged for them.
+        if await host.supportedBolusVolumes().isEmpty {
+            log("Garmin: mealBolus rejected - no pump")
+            return GarminCommandMessage.noPump
+        }
+        if let maximum = await host.maximumBolus(), NSDecimalNumber(decimal: units).doubleValue > maximum {
+            log("Garmin: mealBolus rejected - bolus above the maximum bolus")
+            return GarminCommandMessage.bolusAboveMaximum
+        }
         if let message = glucoseRejection(await host.latestGlucoseDate(), request: request) {
             return message
         }
         // read last, closest to the carbs
-        if let message = holdRejection(await insulinLane.lastEnactment) {
+        if let message = holdRejection(await insulinLane.lastEnactment(clampedTo: now())) {
             return message
         }
         return nil
@@ -471,7 +497,7 @@ actor GarminCommandInsulinLane {
             return .rejected(rejection.message)
         }
 
-        let previousEnactment = await insulinLane.lastEnactment
+        let previousEnactment = await insulinLane.lastEnactment(clampedTo: now())
         if let message = holdRejection(previousEnactment) {
             return .rejected(message)
         }
@@ -509,6 +535,10 @@ actor GarminCommandInsulinLane {
     /// The `minimumBolusInterval` hold after the last watch bolus handed to the host.
     private func holdRejection(_ lastEnactment: Date?) -> String? {
         guard let lastEnactment, now().timeIntervalSince(lastEnactment) < Self.minimumBolusInterval else { return nil }
+        if store.recoveredFromUnreadableData, !hasLoggedUnreadableStore {
+            hasLoggedUnreadableStore = true
+            log("Garmin: the saved watch bolus record couldn't be read; watch boluses are held as after a bolus")
+        }
         log("Garmin: bolus rejected - previous watch bolus may not be in pump history yet")
         return GarminCommandMessage.recentBolus
     }
@@ -758,6 +788,7 @@ private enum GarminCommandMessage {
     }
     static var rateLimited: String { LocalizedString("Too soon after the previous bolus. No bolus was delivered.", comment: "Garmin watch ack: host refused, too soon after a bolus") }
     static var dailyLimitReached: String { LocalizedString("Daily watch bolus limit reached. No bolus was delivered.", comment: "Garmin watch ack: host's daily limit") }
+    static var noPump: String { LocalizedString("No pump. No bolus was delivered.", comment: "Garmin watch ack: no pump, bolus refused") }
     static var bolusInProgress: String { LocalizedString("Another bolus is in progress. No bolus was delivered.", comment: "Garmin watch ack: another bolus is being delivered") }
 
     static var carbsLogged: String { LocalizedString("Carbs logged.", comment: "Garmin watch ack: carbs added") }
@@ -777,6 +808,10 @@ private enum GarminCommandMessage {
         switch reason {
         case noRecentGlucose:
             return String(format: LocalizedString("No glucose reading in the last %d minutes. No carbs or bolus were logged.", comment: "Garmin watch ack: meal bolus refused before carbs, no recent glucose; %d is minutes"), glucoseMinutes)
+        case bolusAboveMaximum:
+            return LocalizedString("Bolus is above the maximum bolus. No carbs or bolus were logged.", comment: "Garmin watch ack: meal bolus refused before carbs, over max bolus")
+        case noPump:
+            return LocalizedString("No pump. No carbs or bolus were logged.", comment: "Garmin watch ack: meal bolus refused before carbs, no pump")
         case recentBolus:
             return String(format: LocalizedString("Too soon after the previous watch bolus. Check pump history and wait %d minutes. No carbs or bolus were logged.", comment: "Garmin watch ack: meal bolus refused before carbs, watch bolus hold; %d is minutes"), holdMinutes)
         default:

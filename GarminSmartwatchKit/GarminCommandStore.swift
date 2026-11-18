@@ -25,6 +25,12 @@ protocol GarminCommandStore: AnyObject, Sendable {
     func saveInsulinRequest(_ request: GarminStoredInsulinRequest)
     /// Drops requests admitted at or before `cutoff`, as the cache's lifetime does.
     func pruneInsulinRequests(admittedThrough cutoff: Date)
+    /// The stored record couldn't be read, so watch boluses are held as after a bolus.
+    var recoveredFromUnreadableData: Bool { get }
+}
+
+extension GarminCommandStore {
+    var recoveredFromUnreadableData: Bool { false }
 }
 
 /// An insulin request as stored: who sent it, what it asked for, when it was admitted and, once

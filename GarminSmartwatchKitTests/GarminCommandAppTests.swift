@@ -846,6 +846,14 @@ private func carbsCommand(id: String = "3f2b8c1e-4a5d-4e6f-9a7b-1c2d3e4f5a6b") -
         #expect(rig.notices(to: rig.trioUUID).isEmpty)
     }
 
+    @Test("Deleting the plugin first revokes commands still waiting")
+    func deleteRevokesPendingCommands() async {
+        let rig = CommandAppRig(watchface: .trio, commands: true)
+        let before = rig.manager.commandAuthorization.current
+        await rig.manager.delete()
+        #expect(rig.manager.commandAuthorization.current > before)
+    }
+
     @Test("Deleting the plugin with commands never on sends no notice")
     func noStandDownOnDeleteWithoutCommands() async {
         let rig = CommandAppRig(watchface: .complication, commands: false)

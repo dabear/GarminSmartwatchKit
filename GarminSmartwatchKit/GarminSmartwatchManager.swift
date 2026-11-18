@@ -1055,6 +1055,9 @@ extension GarminSmartwatchManager: SmartwatchManager {
     /// completions from sending anything afterwards.
     public func delete() async {
         await MainActor.run {
+            // First: a command waiting in the processor (a bolus in the insulin lane) is refused
+            // at its final check instead of reaching the host, which still has this manager.
+            commandAuthorization.revokeAll()
             // Command apps told they are active stand down, so their commands aren't left
             // unanswered; sent once, nothing waits for or retries it.
             let notice = GarminCommandEnvelope.commandAppNotice(isActive: false, commandApp: .none)

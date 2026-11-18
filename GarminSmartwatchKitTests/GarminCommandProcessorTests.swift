@@ -412,8 +412,9 @@ import Testing
     }
 
     @Test("A refused meal bolus keeps the carbs and reports a partial failure") func mealBolusRefused() async {
+        // under the maximum the plugin knows, so the host is asked after the carbs and refuses
         host.bolusErrors = [SmartwatchActionError.exceedsMaximum]
-        let result = await processor.process(request(.mealBolus(carbs: 40, bolus: 30)))
+        let result = await processor.process(request(.mealBolus(carbs: 40, bolus: 3)))
 
         #expect(result == GarminWatchCommandResult(
             acknowledged: false, ackCode: .partialFailure, message: "Carbs logged. Bolus is above the maximum bolus. No bolus was delivered."
@@ -436,6 +437,27 @@ import Testing
 
         #expect(result == .failure("Couldn't log carbs. No bolus was delivered."))
         #expect(host.bolusCalls.isEmpty)
+    }
+
+    @Test("A meal bolus above the maximum bolus, or without a pump, adds no carbs")
+    func mealBolusMaximumOrNoPumpAddsNoCarbs() async {
+        host.maxBolus = 2
+        #expect(await processor.process(request(.mealBolus(carbs: 40, bolus: 3)))
+            == .failure("Bolus is above the maximum bolus. No carbs or bolus were logged."))
+        host.maxBolus = 10
+        host.volumes = []
+        #expect(await processor.process(request(.mealBolus(carbs: 40, bolus: 3)))
+            == .failure("No pump. No carbs or bolus were logged."))
+        #expect(host.calls.isEmpty)
+    }
+
+    @Test("A clock turned back after a watch bolus holds for at most the interval from then")
+    func clockTurnedBackInSession() async {
+        #expect(await processor.process(request(.bolus(1))).acknowledged)
+        clock.advance(by: -3600)
+        #expect(await processor.process(request(.bolus(1))).acknowledged == false, "Held: the bolus may be recent")
+        clock.advance(by: GarminCommandProcessor.minimumBolusInterval)
+        #expect(await processor.process(request(.bolus(1))).acknowledged, "Not held for the hour the clock went back")
     }
 
     @Test("A meal bolus held back by the hold adds no carbs, and a resend adds none either") func mealBolusHoldAddsNoCarbs() async {
