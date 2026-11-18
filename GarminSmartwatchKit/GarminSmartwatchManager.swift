@@ -13,6 +13,31 @@ import LoopKit
     import UIKit
 #endif
 
+// MARK: - Connect IQ Client
+
+/// The Connect IQ calls that register and reach watch apps, behind a protocol so delivery can be
+/// tested without a watch. There is deliberately no app-status call: each one is a BLE round trip.
+/// From mountrcg's Garmin delivery rework (MIT).
+protocol GarminConnectIQClient: AnyObject {
+    func registerDevice(_ device: IQDevice, delegate: IQDeviceEventDelegate)
+    func registerApp(_ app: IQApp, delegate: IQAppMessageDelegate)
+    func send(_ message: Any, to app: IQApp, completion: @escaping (IQSendMessageResult) -> Void)
+}
+
+extension ConnectIQ: GarminConnectIQClient {
+    func registerDevice(_ device: IQDevice, delegate: IQDeviceEventDelegate) {
+        register(forDeviceEvents: device, delegate: delegate)
+    }
+
+    func registerApp(_ app: IQApp, delegate: IQAppMessageDelegate) {
+        register(forAppMessages: app, delegate: delegate)
+    }
+
+    func send(_ message: Any, to app: IQApp, completion: @escaping (IQSendMessageResult) -> Void) {
+        sendMessage(message, to: app, progress: { _, _ in }, completion: completion)
+    }
+}
+
 /// Garmin (Connect IQ) as a watch plugin. **Experimental.**
 ///
 /// It sends the host's glucose, loop status and therapy values to the chosen
@@ -48,13 +73,35 @@ public final class GarminSmartwatchManager: NSObject {
     /// Subject for debouncing watch state updates
     private let watchStateSubject = PassthroughSubject<Data, Never>()
 
-    /// Tracks which devices have completed characteristic discovery and are ready for communication.
-    /// In SDK 1.8+, `deviceStatusChanged: connected` does NOT mean the device is ready.
-    /// We must wait for `deviceCharacteristicsDiscovered:` before sending messages.
-    private var readyDevices: Set<UUID> = []
+    /// Registers and messages watch apps; the shared Connect IQ instance unless a test sets a spy.
+    var connectIQClient: GarminConnectIQClient? = ConnectIQ.sharedInstance()
 
-    /// Hash of last sent data to prevent duplicate broadcasts
-    private var lastSentDataHash: Int?
+    /// Wait before the single resend of a failed message.
+    var sendRetryDelay: TimeInterval = 2
+
+    // MARK: - Delivery
+
+    /// What an app is still owed after its send failed for good; the latest state wins. Main queue only.
+    struct OwedDelivery: Equatable {
+        var stateHash: Int?
+        var presets = false
+    }
+
+    /// The send result is the readiness signal: readiness never gates a send, because a missed
+    /// characteristics callback would otherwise block delivery until the next reconnect.
+    private(set) var owedDeliveries: [String: OwedDelivery] = [:]
+
+    /// Apps that answered `AppNotFound`, skipped until re-registration or a message from them.
+    private(set) var absentApps: Set<String> = []
+
+    /// The only send gate, set by the SDK's device status callbacks.
+    private var disconnectedDevices: Set<UUID> = []
+
+    /// Latest broadcast payload, sent again to apps that are owed state.
+    private var lastBroadcast: (payload: Any, hash: Int)?
+
+    /// Hash of the last state each app confirmed receiving, keyed by `deliveryKey(for:)`.
+    private(set) var lastSentDataHashes: [String: Int] = [:]
 
     // MARK: - Commands
 
@@ -224,16 +271,13 @@ public final class GarminSmartwatchManager: NSObject {
     private func registerDevices(_ devices: [IQDevice]) {
         watchApps.removeAll()
 
-        // Reset broadcast hash so newly registered apps receive data
-        // Without this, hash deduplication could skip sending to new apps if data unchanged
-        lastSentDataHash = nil
-
-        // Note: Do NOT clear readyDevices here. The device ready state is based on BLE
-        // characteristic discovery, which only happens on new connections. Re-registering
-        // for app messages doesn't affect the underlying BLE connection state.
+        // Newly registered apps get the next state even if it is unchanged.
+        lastSentDataHashes.removeAll()
+        // Re-registration is the retry permission for apps that answered AppNotFound.
+        absentApps.removeAll()
 
         for device in devices {
-            connectIQ?.register(forDeviceEvents: device, delegate: self)
+            connectIQClient?.registerDevice(device, delegate: self)
 
             // Register watchface if enabled
             if isWatchfaceDataEnabled,
@@ -242,7 +286,7 @@ public final class GarminSmartwatchManager: NSObject {
             {
                 log("Registered Garmin \(appDetailedName(for: watchfaceUUID))")
                 watchApps.append(watchfaceApp)
-                connectIQ?.register(forAppMessages: watchfaceApp, delegate: self)
+                connectIQClient?.registerApp(watchfaceApp, delegate: self)
             } else if !isWatchfaceDataEnabled {
                 log("Garmin watchface data disabled, watchface not registered")
             }
@@ -254,9 +298,11 @@ public final class GarminSmartwatchManager: NSObject {
                 else { continue }
                 log("Registered Garmin \(appDetailedName(for: datafieldUUID))")
                 watchApps.append(datafieldApp)
-                connectIQ?.register(forAppMessages: datafieldApp, delegate: self)
+                connectIQClient?.registerApp(datafieldApp, delegate: self)
             }
         }
+        let registeredKeys = Set(watchApps.compactMap(deliveryKey(for:)))
+        owedDeliveries = owedDeliveries.filter { registeredKeys.contains($0.key) }
     }
 
     // MARK: - Simulator Support
@@ -355,9 +401,9 @@ public final class GarminSmartwatchManager: NSObject {
         deviceSelectionPromise = nil
     }
 
-    /// Broadcasts watch state data to all registered apps
-    private func broadcastWatchStateData(_ data: Data) {
-        // Deduplicate: Use stable content-based hash (sorted JSON bytes)
+    /// Sends the state once to every registered app that hasn't confirmed this exact state yet.
+    func broadcastWatchStateData(_ data: Data) {
+        // Stable content-based hash (sorted JSON bytes)
         let currentHash: Int
         if let sortedData = try? JSONSerialization.data(
             withJSONObject: JSONSerialization.jsonObject(with: data, options: []),
@@ -368,43 +414,86 @@ public final class GarminSmartwatchManager: NSObject {
             currentHash = data.count // Fallback
         }
 
-        if currentHash == lastSentDataHash {
-            if true {
-                log("Garmin broadcast skipped, data unchanged")
-            }
-            return
-        }
-
         guard let jsonObject = try? JSONSerialization.jsonObject(with: data, options: []) else {
             log(type: .error, "Garmin watch state is not valid JSON")
             return
         }
+        lastBroadcast = (jsonObject, currentHash)
 
-        watchApps.forEach { app in
-            guard let appUUID = app.uuid else {
-                log("Skipped Garmin app without UUID")
-                return
-            }
-            let appName = self.appDisplayName(for: appUUID)
+        for app in watchApps {
+            guard let key = deliveryKey(for: app), let device = app.device else { continue }
+            let appName = appDisplayName(for: app.uuid)
 
-            // Check if device is ready (SDK 1.8+ requirement)
-            guard let device = app.device, readyDevices.contains(device.uuid) else {
-                log("Skipped Garmin \(appName), device not ready")
-                return
+            if lastSentDataHashes[key] == currentHash, owedDeliveries[key]?.stateHash == nil {
+                log("Garmin \(appName) skipped, data unchanged")
+                continue
             }
-
-            connectIQ?.getAppStatus(app) { [weak self] status in
-                guard status?.isInstalled == true else {
-                    self?.log("Garmin \(appName) not installed")
-                    return
-                }
-                self?.log("Sending to Garmin \(appName)")
-                self?.sendMessage(jsonObject as Any, to: app, appName: appName)
+            guard isReachable(key: key, device: device, appName: appName) else {
+                recordOwed(for: key, stateHash: currentHash)
+                continue
             }
+            log("Sending state to Garmin \(appName)")
+            sendMessage(jsonObject, to: app, appName: appName, stateHash: currentHash)
         }
+    }
 
-        // Update last sent hash after initiating send
-        lastSentDataHash = currentHash
+    // MARK: - Delivery
+
+    func deliveryKey(for app: IQApp) -> String? {
+        guard let appUUID = app.uuid, let deviceUUID = app.device?.uuid else { return nil }
+        return "\(appUUID.uuidString)-\(deviceUUID.uuidString)"
+    }
+
+    /// SDK completions aren't documented to arrive on main; delivery state lives there.
+    private func onMain(_ work: @escaping () -> Void) {
+        if Thread.isMainThread {
+            work()
+        } else {
+            DispatchQueue.main.async(execute: work)
+        }
+    }
+
+    /// Skipping keeps whatever the app is owed for the next trigger.
+    private func isReachable(key: String, device: IQDevice, appName: String) -> Bool {
+        if absentApps.contains(key) {
+            log("Garmin \(appName) skipped, app not installed")
+            return false
+        }
+        if disconnectedDevices.contains(device.uuid) {
+            log("Garmin \(appName) skipped, device disconnected")
+            return false
+        }
+        return true
+    }
+
+    /// Acks are never owed: the watch expires an unanswered command itself.
+    private func recordOwed(for key: String, stateHash: Int? = nil, presets: Bool = false) {
+        guard stateHash != nil || presets else { return }
+        var owed = owedDeliveries[key] ?? OwedDelivery()
+        if let stateHash { owed.stateHash = stateHash }
+        owed.presets = owed.presets || presets
+        owedDeliveries[key] = owed
+    }
+
+    /// Any delivered message proves the channel, so what the app is still owed goes out now.
+    private func flushOwed(to app: IQApp, key: String, appName: String) {
+        guard let owed = owedDeliveries.removeValue(forKey: key) else { return }
+        if owed.stateHash != nil, let broadcast = lastBroadcast, lastSentDataHashes[key] != broadcast.hash {
+            log("Sending owed state to Garmin \(appName)")
+            sendMessage(broadcast.payload, to: app, appName: appName, stateHash: broadcast.hash)
+        }
+        if owed.presets {
+            Task { @MainActor in self.pushPresets(to: [app], triggeredBy: "OwedDelivery") }
+        }
+    }
+
+    /// Sends again on the triggers that occur anyway (broadcast, reconnect, a message from the app)
+    /// instead of timers.
+    private func flushOwed(on device: IQDevice) {
+        for app in watchApps where app.device?.uuid == device.uuid {
+            guard let key = deliveryKey(for: app), !absentApps.contains(key) else { continue }
+            flushOwed(to: app, key: key, appName: appDisplayName(for: app.uuid))
+        }
     }
 
     // MARK: - Devices
@@ -444,36 +533,36 @@ public final class GarminSmartwatchManager: NSObject {
 
     // MARK: - Helper: Sending Messages
 
-    /// Sends a message to a given IQApp with optional progress and completion callbacks.
-    /// Retries once after a short delay if the first attempt fails (SDK may need time after re-registration).
-    /// - Parameters:
-    ///   - msg: The data to send to the watch app.
-    ///   - app: The `IQApp` instance representing the watchface or data field.
-    ///   - appName: The display name of the app for logging.
-    ///   - isRetry: Whether this is a retry attempt (to prevent infinite retries).
-    private func sendMessage(_ msg: Any, to app: IQApp, appName: String, isRetry: Bool = false) {
-        connectIQ?.sendMessage(
-            msg,
-            to: app,
-            progress: { _, _ in },
-            completion: { [weak self] result in
+    /// Sends with one resend after `sendRetryDelay` for other failures; a final failure leaves the
+    /// state or preset list owed. `AppNotFound` is never resent: the app isn't installed.
+    func sendMessage(_ msg: Any, to app: IQApp, appName: String, stateHash: Int? = nil, isPresets: Bool = false, isRetry: Bool = false) {
+        connectIQClient?.send(msg, to: app) { [weak self] result in
+            self?.onMain {
+                guard let self, let key = self.deliveryKey(for: app) else { return }
                 switch result {
                 case .success:
-                    self?.log("Sent to Garmin \(appName)")
+                    self.log("Sent to Garmin \(appName)")
+                    self.absentApps.remove(key)
+                    if let stateHash { self.lastSentDataHashes[key] = stateHash }
+                    self.flushOwed(to: app, key: key, appName: appName)
+                case .failure_AppNotFound:
+                    self.log("Garmin \(appName) not installed, skipped until re-registered or heard from")
+                    self.absentApps.insert(key)
+                    self.recordOwed(for: key, stateHash: stateHash, presets: isPresets)
                 default:
+                    let reason = NSStringFromSendMessageResult(result) ?? "\(result.rawValue)"
                     if isRetry {
-                        self?.log(type: .error, "Sending to Garmin \(appName) failed after retry")
+                        self.log(type: .error, "Sending to Garmin \(appName) failed after retry (\(reason))")
+                        self.recordOwed(for: key, stateHash: stateHash, presets: isPresets)
                     } else {
-                        self?.log(type: .error, "Sending to Garmin \(appName) failed, retrying in 2 s")
-                        // Retry after delay - SDK may need time after re-registration
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                            self?.log("Retrying send to Garmin \(appName)")
-                            self?.sendMessage(msg, to: app, appName: appName, isRetry: true)
+                        self.log(type: .error, "Sending to Garmin \(appName) failed, retrying (\(reason))")
+                        DispatchQueue.main.asyncAfter(deadline: .now() + self.sendRetryDelay) { [weak self] in
+                            self?.sendMessage(msg, to: app, appName: appName, stateHash: stateHash, isPresets: isPresets, isRetry: true)
                         }
                     }
                 }
             }
-        )
+        }
     }
 }
 
@@ -539,8 +628,7 @@ extension GarminSmartwatchManager: IQUIOverrideDelegate, IQDeviceEventDelegate, 
     // MARK: - IQDeviceEventDelegate
 
     /// Called whenever the status of a registered Garmin device changes (e.g., connected, not found, etc.).
-    /// Note: In SDK 1.8+, `connected` does NOT mean ready for communication.
-    /// Wait for `deviceCharacteristicsDiscovered:` before sending messages.
+    /// Only a lost connection stops sends; nothing here costs a round trip to the watch.
     /// - Parameters:
     ///   - device: The device whose status has changed.
     ///   - status: The new status for the device.
@@ -549,29 +637,31 @@ extension GarminSmartwatchManager: IQUIOverrideDelegate, IQDeviceEventDelegate, 
         switch status {
         case .invalidDevice:
             log(type: .error, "Garmin device invalid")
-            readyDevices.remove(device.uuid)
+            disconnectedDevices.insert(device.uuid)
         case .bluetoothNotReady:
             log("Garmin device unavailable, Bluetooth not ready")
-            readyDevices.remove(device.uuid)
+            disconnectedDevices.insert(device.uuid)
         case .notFound:
             log("Garmin device not found")
-            readyDevices.remove(device.uuid)
+            disconnectedDevices.insert(device.uuid)
         case .notConnected:
             log("Garmin device disconnected")
-            readyDevices.remove(device.uuid)
+            disconnectedDevices.insert(device.uuid)
         case .connected:
-            log("Garmin device connected, waiting for characteristics")
+            log("Garmin device connected")
+            disconnectedDevices.remove(device.uuid)
         @unknown default:
             log("Garmin device status unknown (\(status.rawValue))")
         }
     }
 
-    /// Called when device characteristics are discovered and the device is ready for communication.
-    /// This is required in SDK 1.8+ - sending before this callback may fail.
+    /// Called when device characteristics are discovered (SDK 1.8+). It doesn't gate sends,
+    /// but a reconnect is a good moment to send what the watch apps are owed.
     /// - Parameter device: The device whose characteristics have been discovered.
     public func deviceCharacteristicsDiscovered(_ device: IQDevice) {
         log("Garmin device connected and ready")
-        readyDevices.insert(device.uuid)
+        disconnectedDevices.remove(device.uuid)
+        flushOwed(on: device)
 
         // Trigger a data send now that device is ready
         // This ensures newly connected devices get data promptly
@@ -592,7 +682,17 @@ extension GarminSmartwatchManager: IQUIOverrideDelegate, IQDeviceEventDelegate, 
             return
         }
         let appName = appDisplayName(for: appUUID)
-        let isRegistered = watchApps.contains { $0.uuid == appUUID && $0.device?.uuid == app.device?.uuid }
+        let registered = watchApps.first { $0.uuid == appUUID && $0.device?.uuid == app.device?.uuid }
+        let isRegistered = registered != nil
+        let registeredKey = registered.flatMap(deliveryKey(for:))
+
+        // A message from the app proves the channel, so it gets what it is owed right away.
+        if let registered, let registeredKey {
+            onMain { [weak self] in
+                self?.absentApps.remove(registeredKey)
+                self?.flushOwed(to: registered, key: registeredKey, appName: appName)
+            }
+        }
         // Connect IQ messages are plain property-list values.
         nonisolated(unsafe) let message = message
         nonisolated(unsafe) let app = app
@@ -608,7 +708,7 @@ extension GarminSmartwatchManager: IQUIOverrideDelegate, IQDeviceEventDelegate, 
             if outcome.refreshesState {
                 // The app is asking, so answer even when nothing changed: a freshly opened
                 // watch app or glance has no data until it gets a send.
-                self.lastSentDataHash = nil
+                if let registeredKey { self.lastSentDataHashes[registeredKey] = nil }
                 self.triggerWatchStateUpdate(triggeredBy: "WatchRequest")
             }
             if outcome.pushesPresets {
@@ -617,18 +717,28 @@ extension GarminSmartwatchManager: IQUIOverrideDelegate, IQDeviceEventDelegate, 
         }
     }
 
-    /// Sends the preset list, switches and limits to every registered complication app,
-    /// targeted like an ack so it never touches the state broadcast or its duplicate check.
+    /// Sends the preset list, switches and limits to every registered complication app.
     @MainActor func pushPresetsToComplications(triggeredBy trigger: String) {
         let complicationUUID = GarminWatchface.complication.watchfaceUUID
-        let targets = watchApps.filter { $0.uuid != nil && $0.uuid == complicationUUID }
+        pushPresets(to: watchApps.filter { $0.uuid != nil && $0.uuid == complicationUUID }, triggeredBy: trigger)
+    }
+
+    /// Targeted like an ack, so it never touches the state broadcast or its duplicate check.
+    /// A push that can't be delivered stays owed like state.
+    @MainActor private func pushPresets(to targets: [IQApp], triggeredBy trigger: String) {
         guard !targets.isEmpty, smartwatchManagerDelegate != nil else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
             let response = GarminCommandEnvelope.presetsResponse(await self.commandProcessor.presets())
             self.log("Sending Garmin preset list (\(trigger))")
             for app in targets {
-                self.sendTargetedResponse(response, to: app, appName: self.appDisplayName(for: app.uuid))
+                guard let key = self.deliveryKey(for: app), let device = app.device else { continue }
+                let appName = self.appDisplayName(for: app.uuid)
+                guard self.isReachable(key: key, device: device, appName: appName) else {
+                    self.recordOwed(for: key, presets: true)
+                    continue
+                }
+                self.sendTargetedResponse(response, to: app, appName: appName, isPresets: true)
             }
         }
     }
@@ -636,10 +746,10 @@ extension GarminSmartwatchManager: IQUIOverrideDelegate, IQDeviceEventDelegate, 
     /// Answers one app directly. Never routed through `broadcastWatchStateData`, whose
     /// duplicate check would otherwise suppress the next state update or send command
     /// data to other apps.
-    private func sendTargetedResponse(_ response: [String: Any], to app: IQApp, appName: String) {
+    private func sendTargetedResponse(_ response: [String: Any], to app: IQApp, appName: String, isPresets: Bool = false) {
         let kind = response[GarminMessageKey.request] as? String ?? "response"
         log("Sending Garmin \(kind) to \(appName)")
-        sendMessage(response, to: app, appName: appName)
+        sendMessage(response, to: app, appName: appName, isPresets: isPresets)
     }
 }
 
