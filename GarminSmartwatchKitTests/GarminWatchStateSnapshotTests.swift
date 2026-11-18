@@ -209,6 +209,18 @@ import Testing
         #expect(state.predictedMax == pairs)
     }
 
+    @Test("Each pair has its value's own date: Loop's curve starts at the reading, then the 5-minute grid")
+    func predictedPairsUseValueDates() {
+        // As Loop: first value at the newest reading (2 minutes past the grid), then on the grid.
+        let start = now.addingTimeInterval(120)
+        let curve = [PredictedGlucoseValue(startDate: start, quantity: mgdL(120))] + (1 ..< 16).map { index in
+            PredictedGlucoseValue(startDate: now.addingTimeInterval(Double(index) * 300), quantity: mgdL(120 + Double(index)))
+        }
+        let pairs = GarminWatchState.predictedPairs([curve], now: now).min ?? []
+        #expect(pairs.first?[0] == UInt64(start.timeIntervalSince1970 * 1000))
+        #expect(pairs.dropFirst().map { $0[0] } == (1 ..< 8).map { ms(Double($0) * 10) })
+    }
+
     @Test("Sampling is mountrcg's: even indexes up to 15 (10-minute steps, 70 minutes), anchored at the first value") func predictedSampling() {
         let state = first([ramp(from: 100, step: 1, count: 40)], options: withPredicted, at: now.addingTimeInterval(-60))
         let pairs = state.predictedMin ?? []

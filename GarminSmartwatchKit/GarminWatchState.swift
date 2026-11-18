@@ -449,12 +449,17 @@ public extension GarminWatchState {
         now: Date
     ) -> (line: [[UInt64]]?, min: [[UInt64]]?, max: [[UInt64]]?) {
         let curves = curves.filter { !$0.isEmpty }
-        guard let anchor = curves.first?.first?.startDate else { return (nil, nil, nil) }
+        guard !curves.isEmpty else { return (nil, nil, nil) }
+        // Each value's own date: Loop's first value is the newest reading's time and the
+        // rest sit on the 5-minute clock grid, so anchor plus index * 5 min would be up to
+        // 5 minutes late. Trio's curves are evenly spaced, where both are the same.
+        var dateByIndex: [Int: Date] = [:]
         var minByIndex: [Int: Int16] = [:]
         var maxByIndex: [Int: Int16] = [:]
         for curve in curves {
             for index in curve.indices where index.isMultiple(of: 2) && index <= predictedIndexLimit {
                 guard let value = mgdL(mgdLValue(curve[index].quantity)), value > 0 else { continue }
+                if dateByIndex[index] == nil { dateByIndex[index] = curve[index].startDate }
                 minByIndex[index] = Swift.min(minByIndex[index] ?? value, value)
                 maxByIndex[index] = Swift.max(maxByIndex[index] ?? value, value)
             }
@@ -462,8 +467,7 @@ public extension GarminWatchState {
         var lows: [[UInt64]] = []
         var highs: [[UInt64]] = []
         for index in minByIndex.keys.sorted() {
-            let date = anchor.addingTimeInterval(TimeInterval(index * 300))
-            guard date > now, let low = minByIndex[index], let high = maxByIndex[index] else { continue }
+            guard let date = dateByIndex[index], date > now, let low = minByIndex[index], let high = maxByIndex[index] else { continue }
             let time = milliseconds(date)
             lows.append([time, UInt64(low)])
             highs.append([time, UInt64(high)])
