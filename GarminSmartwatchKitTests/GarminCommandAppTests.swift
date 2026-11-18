@@ -265,11 +265,31 @@ private func carbsCommand(id: String = "3f2b8c1e-4a5d-4e6f-9a7b-1c2d3e4f5a6b") -
 
     @Test("The Complication app is a command app too and gets its notice as the watchface")
     func complicationNotice() {
-        let rig = CommandAppRig(watchface: .complication, commands: false)
+        let rig = CommandAppRig(watchface: .complication, commands: true)
 
         for device in [rig.deviceA, rig.deviceB] {
             #expect(rig.notices(to: rig.complicationUUID, on: device) == [.active("complication")])
         }
+    }
+
+    @Test("Commands off: Complication as the watchface hears nothing but state")
+    func complicationSilentWhileCommandsOff() {
+        let rig = CommandAppRig(watchface: .complication, commands: false)
+
+        #expect(rig.notices(to: rig.complicationUUID).isEmpty)
+        #expect(rig.manager.announcedCommandApps.isEmpty)
+    }
+
+    @Test("Commands switched on and off with Complication as the watchface: active, then a stand-down naming no app")
+    func complicationCommandsToggled() {
+        let rig = CommandAppRig(watchface: .complication, commands: false)
+        rig.change { $0.isCommandControlEnabled = true }
+        rig.change { $0.isCommandControlEnabled = false }
+
+        for device in [rig.deviceA, rig.deviceB] {
+            #expect(rig.notices(to: rig.complicationUUID, on: device) == [.active("complication"), .inactive("none")])
+        }
+        #expect(rig.manager.announcedCommandApps.isEmpty)
     }
 
     @Test("Without a command app nobody is told anything")
@@ -332,14 +352,12 @@ private func carbsCommand(id: String = "3f2b8c1e-4a5d-4e6f-9a7b-1c2d3e4f5a6b") -
         }
     }
 
-    @Test("Switching from Complication with commands off: it stands down with no command app")
+    @Test("Switching from Complication with commands off: it was never told it is active, so it is told nothing")
     func inactiveToNone() {
         let rig = CommandAppRig(watchface: .complication, commands: false)
         rig.change { $0.watchface = .swissalpine }
 
-        for device in [rig.deviceA, rig.deviceB] {
-            #expect(rig.notices(to: rig.complicationUUID, on: device) == [.active("complication"), .inactive("none")])
-        }
+        #expect(rig.notices(to: rig.complicationUUID).isEmpty)
     }
 
     @Test("A change that keeps the command app tells it nothing new beyond the re-registration")
@@ -464,7 +482,8 @@ private func carbsCommand(id: String = "3f2b8c1e-4a5d-4e6f-9a7b-1c2d3e4f5a6b") -
 
         rig.hear("status", from: uuid, on: rig.deviceA)
 
-        #expect(rig.notices(to: uuid) == [.inactive(current.rawValue)])
+        // With commands off, an app never told it is active hears nothing but state.
+        #expect(rig.notices(to: uuid) == (commands ? [.inactive(current.rawValue)] : []))
         #expect(rig.manager.currentCommandApp == current)
     }
 
@@ -572,6 +591,26 @@ private func carbsCommand(id: String = "3f2b8c1e-4a5d-4e6f-9a7b-1c2d3e4f5a6b") -
         await presetPushes(commandApp: rig)
 
         #expect(rig.allSent.isEmpty)
+    }
+
+    @Test("Commands off: Complication as the watchface gets no preset list, from a push or the host")
+    func presetsSilentWhileCommandsOff() async {
+        let rig = CommandAppRig(watchface: .complication, commands: false)
+        await presetPushes(commandApp: rig)
+        rig.manager.hostDataDidChange([.presets, .settings])
+        await rig.settle()
+
+        #expect(rig.presets(to: rig.complicationUUID).isEmpty)
+        #expect(rig.manager.owedDeliveries.values.allSatisfy { !$0.presets })
+    }
+
+    @Test("Commands switched on with Complication as the watchface: it gets the preset list")
+    func presetsWhenCommandsTurnedOn() async {
+        let rig = CommandAppRig(watchface: .complication, commands: false, devices: [0])
+        await rig.attachHost()
+
+        rig.change { $0.isCommandControlEnabled = true }
+        #expect(await rig.eventually { rig.presets(to: rig.complicationUUID).count == 1 })
     }
 
     @Test("Presets go only to registered apps on selected devices")
