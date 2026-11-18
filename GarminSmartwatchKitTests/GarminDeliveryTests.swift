@@ -15,7 +15,10 @@ final class SpyConnectIQClient: GarminConnectIQClient, @unchecked Sendable {
         let deviceUUID: UUID
     }
 
+    /// Everything sent except command app notices, which are kept apart in `notices`: they go out with
+    /// every registration, and the delivery counts below are about state, presets and acks.
     private(set) var sent: [Sent] = []
+    private(set) var notices: [Sent] = []
     private(set) var registeredDevices: [UUID] = []
     private(set) var registeredApps: [(appUUID: UUID, deviceUUID: UUID)] = []
 
@@ -49,7 +52,11 @@ final class SpyConnectIQClient: GarminConnectIQClient, @unchecked Sendable {
     func send(_ message: Any, to app: IQApp, completion: @escaping (IQSendMessageResult) -> Void) {
         let deviceUUID: UUID = app.device.uuid
         let record = Sent(message: message, appUUID: app.uuid, deviceUUID: deviceUUID)
-        sent.append(record)
+        if (message as? [String: Any])?["req"] as? String == "ownerMode" {
+            notices.append(record)
+        } else {
+            sent.append(record)
+        }
         if holdsCompletions {
             pending.append((record, completion))
             return

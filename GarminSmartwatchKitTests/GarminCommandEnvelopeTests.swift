@@ -66,6 +66,29 @@ import Testing
         #expect(GarminCommandEnvelope.parse(["v": 1, "req": "ack", "requestId": requestID]) == .invalid(requestID: requestID))
     }
 
+    @Test("An inbound ownerMode notice is invalid: only the phone sends it")
+    func inboundOwnerModeInvalid() {
+        #expect(GarminCommandEnvelope.parse(["v": 1, "req": "ownerMode"]) == .invalid(requestID: nil))
+        #expect(
+            GarminCommandEnvelope.parse(["v": 1, "req": "ownerMode", "active": true, "owner": "watchControls"])
+                == .invalid(requestID: nil)
+        )
+        #expect(GarminCommandEnvelope.parse(["v": 1, "req": "ownerMode", "requestId": requestID]) == .invalid(requestID: requestID))
+        #expect(GarminCommandEnvelope.parse(GarminCommandEnvelope.commandAppNotice(isActive: true, commandApp: .complication)) == .invalid(requestID: nil))
+        #expect(GarminCommandEnvelope.parse(GarminCommandEnvelope.commandAppNotice(isActive: false, commandApp: .none)).logName == "invalid message")
+        #expect(GarminCommandEnvelope.parse(["v": 1, "req": "ownerMode"]).isCommand == false)
+    }
+
+    @Test("Only a command is a command")
+    func isCommand() {
+        #expect(GarminCommandEnvelope.parse(envelope(command: "cancelOverride", payload: [:])).isCommand)
+        #expect(GarminCommandEnvelope.parse(envelope(command: "carbs", payload: ["carbs": "ten"])).isCommand == false)
+        #expect(GarminCommandEnvelope.parse("status").isCommand == false)
+        #expect(GarminCommandEnvelope.parse(["v": 1, "req": "status"]).isCommand == false)
+        #expect(GarminCommandEnvelope.parse(["v": 1, "req": "presets"]).isCommand == false)
+        #expect(GarminCommandEnvelope.parse(7).isCommand == false)
+    }
+
     // MARK: - Commands
 
     @Test("Every command parses with its exact payload")
@@ -315,6 +338,38 @@ import Testing
         #expect(reply["acknowledged"] as? Bool == true)
         #expect(reply["ackCode"] as? String == "carbs_logged")
         #expect(reply["message"] as? String == "Carbs logged.")
+    }
+
+    @Test(
+        "A command app notice has exactly the v1 notice keys",
+        arguments: [
+            (true, GarminCommandApp.watchControls, "watchControls"),
+            (false, .watchControls, "watchControls"),
+            (true, .complication, "complication"),
+            (false, .complication, "complication"),
+            (false, .none, "none")
+        ]
+    )
+    func commandAppNoticeShape(isActive: Bool, commandApp: GarminCommandApp, owner: String) {
+        let notice = GarminCommandEnvelope.commandAppNotice(isActive: isActive, commandApp: commandApp)
+
+        #expect(Set(notice.keys) == ["v", "req", "active", "owner"])
+        #expect(notice["v"] as? Int == 1)
+        #expect(notice["req"] as? String == "ownerMode")
+        #expect(notice["active"] as? Bool == isActive)
+        #expect(notice["owner"] as? String == owner)
+        #expect(notice["requestId"] == nil)
+    }
+
+    @Test("A command app notice reads as a plist boolean and a string")
+    func commandAppNoticeTypes() throws {
+        let notice = GarminCommandEnvelope.commandAppNotice(isActive: true, commandApp: .complication)
+        let data = try PropertyListSerialization.data(fromPropertyList: notice, format: .binary, options: 0)
+        let decoded = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+
+        #expect(decoded["active"] as? Bool == true)
+        #expect((decoded["active"] as? NSNumber).map { CFGetTypeID($0) } == CFBooleanGetTypeID())
+        #expect(decoded["owner"] as? String == "complication")
     }
 
     @Test("A failed or partial result is acknowledged as not acknowledged with its own code")

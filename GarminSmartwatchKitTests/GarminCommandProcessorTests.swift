@@ -14,7 +14,9 @@ import Testing
     private let lane: GarminCommandInsulinLane
     private let logs: LogLines
     private let processor: GarminCommandProcessor
-    private let appUUID = UUID()
+    /// The command app of the host's settings below: a Trio watchface with commands on.
+    private let appUUID = GarminWatchControls.appUUID!
+    private let complicationUUID = GarminWatchface.complication.watchfaceUUID!
 
     init() {
         clock = TestClock(start)
@@ -23,6 +25,7 @@ import Testing
         lane = GarminCommandInsulinLane()
         logs = LogLines()
         var settings = GarminWatchSettings()
+        settings.watchface = .trio
         settings.isCommandControlEnabled = true
         settings.isBolusCommandEnabled = true
         host.commandSettings = settings
@@ -158,6 +161,129 @@ import Testing
         // master off clears bolus too; still one revocation
         authorization.settingsWillChange(from: on, to: masterOff)
         #expect(authorization.current == epoch + 2)
+    }
+
+    @Test("Changing the command app advances the epoch, unless there was none") func commandAppEpoch() {
+        func settings(_ watchface: GarminWatchface, commands: Bool) -> GarminWatchSettings {
+            var settings = GarminWatchSettings()
+            settings.watchface = watchface
+            settings.isCommandControlEnabled = commands
+            return settings
+        }
+        let watchControls = settings(.trio, commands: true)
+        let complication = settings(.complication, commands: true)
+        let none = settings(.trio, commands: false)
+        #expect(GarminCommandApp(watchControls) == .watchControls)
+        #expect(GarminCommandApp(complication) == .complication)
+        #expect(GarminCommandApp(none) == .none)
+
+        let epoch = authorization.current
+        authorization.settingsWillChange(from: watchControls, to: complication)
+        #expect(authorization.current == epoch + 1, "WatchControls to Complication")
+        authorization.settingsWillChange(from: complication, to: watchControls)
+        #expect(authorization.current == epoch + 2, "Complication to WatchControls")
+
+        // Complication stays the command app with commands off; the master switch then decides
+        authorization.settingsWillChange(from: complication, to: settings(.complication, commands: false))
+        #expect(authorization.current == epoch + 3, "Commands turned off still revoke")
+
+        // nothing could be pending without a command app
+        authorization.settingsWillChange(from: none, to: watchControls)
+        authorization.settingsWillChange(from: none, to: complication)
+        #expect(authorization.current == epoch + 3, "From no command app")
+
+        // same command app
+        authorization.settingsWillChange(from: watchControls, to: settings(.swissalpine, commands: true))
+        authorization.settingsWillChange(from: settings(.complication, commands: false), to: complication)
+        #expect(authorization.current == epoch + 3, "The command app stays")
+    }
+
+    // MARK: - Command app
+
+    @Test(
+        "Only the current command app's commands run",
+        arguments: [
+            (GarminWatchface.trio, true, false),
+            (.swissalpine, true, false),
+            (.complication, true, true)
+        ]
+    ) func onlyCommandApp(watchface: GarminWatchface, sentByComplication: Bool, isAccepted: Bool) async {
+        changeSettings { $0.watchface = watchface }
+        let sender = sentByComplication ? complicationUUID : appUUID
+
+        let result = await processor.process(request(.carbs(10), app: sender))
+
+        #expect(result.acknowledged == isAccepted)
+        #expect(host.calls.count == (isAccepted ? 1 : 0))
+        if !isAccepted {
+            #expect(result == .failure("Commands are handled by another watch app."))
+        }
+    }
+
+    @Test("Each command app is refused while the other one is current", arguments: [false, true])
+    func bothDirections(complicationIsCurrent: Bool) async {
+        changeSettings { $0.watchface = complicationIsCurrent ? .complication : .trio }
+        let current = complicationIsCurrent ? complicationUUID : appUUID
+        let other = complicationIsCurrent ? appUUID : complicationUUID
+        host.overrides = [preset("Sport", id: "sport")]
+        let commands: [GarminWatchCommand] = [
+            .bolus(1), .carbs(10), .mealBolus(carbs: 10, bolus: 1),
+            .activateOverride(name: "Sport"), .cancelOverride, .cancelTempTarget
+        ]
+
+        for command in commands {
+            let result = await processor.process(request(command, app: other))
+            #expect(result == .failure("Commands are handled by another watch app."), "\(command)")
+        }
+        #expect(host.calls.isEmpty)
+        #expect(await processor.process(request(.carbs(10), app: current)).acknowledged)
+    }
+
+    @Test("An unknown app is never the command app") func unknownApp() async {
+        for watchface in [GarminWatchface.trio, .complication] {
+            changeSettings { $0.watchface = watchface }
+            #expect(await processor.process(request(.carbs(10), app: UUID())) == .failure("Commands are handled by another watch app."))
+        }
+        #expect(host.calls.isEmpty)
+    }
+
+    @Test("The master switch is reported before the command app; the command app before the bolus switch") func checkOrder() async {
+        changeSettings { $0.isBolusCommandEnabled = false }
+        #expect(
+            await processor.process(request(.bolus(1), app: complicationUUID)) == .failure("Commands are handled by another watch app.")
+        )
+        #expect(await processor.process(request(.bolus(1))) == .failure("Bolus from watch is disabled."))
+
+        changeSettings { $0.isCommandControlEnabled = false }
+        #expect(await processor.process(request(.carbs(10), app: complicationUUID)) == .failure("Watch commands are disabled."))
+        #expect(await processor.process(request(.carbs(10))) == .failure("Watch commands are disabled."))
+        #expect(host.calls.isEmpty)
+    }
+
+    @Test("With commands off the Complication app is still the command app, and refused by the master switch") func complicationCommandsOff() async {
+        changeSettings {
+            $0.watchface = .complication
+            $0.isCommandControlEnabled = false
+        }
+
+        #expect(await processor.process(request(.carbs(10), app: complicationUUID)) == .failure("Watch commands are disabled."))
+        #expect(host.calls.isEmpty)
+    }
+
+    @Test("A refusal for the wrong app is cached like any rejection") func wrongAppRejectionCached() async {
+        let request = request(.carbs(10), app: complicationUUID)
+        let first = await processor.process(request)
+        changeSettings { $0.watchface = .complication }
+
+        #expect(await processor.process(request) == first)
+        #expect(host.calls.isEmpty)
+    }
+
+    @Test("A refusal for the wrong app is logged without amounts") func wrongAppLogged() async {
+        _ = await processor.process(request(.bolus(8.88), app: complicationUUID))
+
+        #expect(logs.lines.contains { $0.contains("isn't the command app") })
+        #expect(logs.lines.allSatisfy { !$0.contains("8.88") })
     }
 
     // MARK: - Carbs
@@ -356,7 +482,9 @@ import Testing
     @Test("Request IDs are scoped per app") func scopedPerApp() async {
         let id = UUID()
         #expect(await processor.process(request(.carbs(10), id: id)).acknowledged)
-        #expect(await processor.process(request(.carbs(10), id: id, app: UUID())).acknowledged)
+        // only the command app runs commands, so the other app becomes it
+        changeSettings { $0.watchface = .complication }
+        #expect(await processor.process(request(.carbs(10), id: id, app: complicationUUID)).acknowledged)
         #expect(host.calls.count == 2)
     }
 
@@ -498,6 +626,70 @@ import Testing
 
         #expect(result == .failure("Watch command settings changed."), "Nothing was logged, so this is no partial failure")
         #expect(host.calls.isEmpty)
+    }
+
+    @Test(
+        "Switching the watchface to another command app while carbs wait adds nothing",
+        arguments: [(GarminWatchface.trio, GarminWatchface.complication), (.complication, .trio), (.swissalpine, .complication)]
+    ) func carbsRevokedByWatchface(from: GarminWatchface, to: GarminWatchface) async {
+        changeSettings { $0.watchface = from }
+        let sender = GarminCommandApp(host.commandSettings).appUUID!
+        host.maxCarbsGate = TestGate()
+        let pending = Task { await processor.process(request(.carbs(40), app: sender)) }
+        await host.maxCarbsGate?.waitForArrivals()
+
+        changeSettings { $0.watchface = to }
+        host.maxCarbsGate?.open()
+
+        #expect(await pending.value == .failure("Watch command settings changed."))
+        #expect(host.calls.isEmpty)
+    }
+
+    @Test("A watchface switch that keeps the command app does not revoke a waiting command") func watchfaceSwitchKeepsCommandApp() async {
+        host.maxCarbsGate = TestGate()
+        let pending = Task { await processor.process(request(.carbs(40))) }
+        await host.maxCarbsGate?.waitForArrivals()
+
+        changeSettings { $0.watchface = .swissalpine }
+        host.maxCarbsGate?.open()
+
+        #expect(await pending.value.acknowledged)
+        #expect(host.calls.count == 1)
+    }
+
+    @Test("A command that waits while the watchface is switched away and back is still revoked") func watchfaceRoundTrip() async {
+        host.maxCarbsGate = TestGate()
+        let pending = Task { await processor.process(request(.carbs(40))) }
+        await host.maxCarbsGate?.waitForArrivals()
+
+        changeSettings { $0.watchface = .complication }
+        changeSettings { $0.watchface = .trio }
+        host.maxCarbsGate?.open()
+
+        #expect(await pending.value == .failure("Watch command settings changed."))
+        #expect(host.calls.isEmpty)
+    }
+
+    @Test("A bolus waiting in the lane when the watchface is switched is not delivered") func bolusRevokedByWatchface() async {
+        host.bolusGate = TestGate()
+        host.bolusErrors = [SmartwatchActionError.exceedsMaximum]
+        let first = Task { await processor.process(request(.bolus(2))) }
+        await host.bolusGate?.waitForArrivals()
+        let second = Task { await processor.process(request(.bolus(1))) }
+        #expect(await eventually { await lane.waitingCount == 1 })
+
+        changeSettings { $0.watchface = .complication }
+        host.bolusGate?.open()
+        #expect(await first.value.acknowledged == false)
+
+        #expect(await second.value == .failure("Watch command settings changed."))
+        #expect(host.bolusCalls == [2])
+        #expect(
+            await processor.process(request(.bolus(1))) == .failure("Commands are handled by another watch app."),
+            "The old command app stays refused"
+        )
+        #expect(await processor.process(request(.bolus(1), app: complicationUUID)).acknowledged)
+        #expect(host.bolusCalls == [2, 1])
     }
 
     @Test("A switch toggled while meal carbs are added stops the bolus") func mealRevokedDuringCarbs() async {

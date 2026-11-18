@@ -218,7 +218,7 @@ struct GarminSettingsView: View {
         } header: {
             Text(LocalizedString("Commands", comment: "Garmin settings: commands section"))
         } footer: {
-            Text(LocalizedString("Commands come from the Complication watch app. Carbs, overrides and temp targets need the first switch; bolus and meal bolus need the second as well. Both are off by default. The phone still applies its own maximum bolus, IOB and carb limits. A watch bolus is refused within 6 minutes of the previous one, and a command older than 2 minutes is refused.", comment: "Garmin settings: commands footer"))
+            Text(LocalizedString("Commands are accepted from one watch app: Complication when it is the watchface, otherwise Trio-WatchControls. Changing the watchface switches the command app at once and cancels commands still pending. Carbs, overrides and temp targets need the first switch; bolus and meal bolus need the second as well. Both are off by default. The phone still applies its own maximum bolus, IOB and carb limits. A watch bolus is refused within 6 minutes of the previous one, and a command older than 2 minutes is refused.", comment: "Garmin settings: commands footer"))
                 + Text("\n\n")
                 + Text(LocalizedString("Only enable this if you keep your watch locked and under your control.", comment: "Garmin settings: commands warning")).bold()
         }

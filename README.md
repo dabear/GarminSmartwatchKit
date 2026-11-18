@@ -13,6 +13,7 @@ It is derived from Trio's `GarminManager`, `GarminWatchState` and `GarminWatchSe
   - up to four datafields: Trio, SwissAlpine, LoopGraph (LoopGraph gets the 2 h history too; its app UUID is Tai's beta build).
 - **Watch commands (off by default),** ported from [Tai](https://github.com/mountrcg/Tai) and its Garmin v1 message format: carbs, overrides and temp targets with *Enable Watch Commands*; bolus and meal bolus also need *Allow Bolus Commands*. The complication app sends them; the plugin answers only the app that asked and pushes it the preset list, switches and limits.
   - The plugin refuses a command older than 2 minutes (or more than 60 s ahead of the phone), a watch bolus within 6 minutes of the previous one, a repeated request ID (it gets the first answer again), and anything admitted before a switch was turned off.
+  - One command app at a time (from mountrcg's Trio PR series): Complication when it is the watchface, otherwise Trio-WatchControls while commands are on. Only its commands run and only it gets the preset list; it is told when it becomes or stops being the command app (`ownerMode`), and changing it cancels pending commands.
   - The host applies its own limits (maximum bolus, Trio's maximum IOB, maximum carbs) and rounds the bolus. Trio's 20 % recent-bolus check, which Tai also ran, isn't part of the host API, so it doesn't apply to these boluses.
 - Settings: watches (chosen in Garmin Connect), watch apps, datafields, commands, display values and glucose colours.
 - Logs go to the host's device log.

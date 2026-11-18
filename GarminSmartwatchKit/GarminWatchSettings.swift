@@ -167,6 +167,51 @@ public enum GarminDatafield: String, CaseIterable, Identifiable, Codable, Hashab
     }
 }
 
+// MARK: - Command app
+
+/// Connect IQ watch app that sends commands next to a Trio or SwissAlpine watchface.
+public enum GarminWatchControls {
+    public static let displayName = "Trio-WatchControls"
+    public static let appUUID = UUID(uuidString: "d504737e-8315-48d4-b07e-4c421ffb6f54")
+}
+
+/// The one watch app allowed to send commands; with both command apps installed, both would
+/// otherwise prompt. Raw values are the `owner` the watch reads from the command app notice.
+/// From mountrcg's Garmin command-app series (MIT).
+public enum GarminCommandApp: String, Sendable {
+    case complication
+    case watchControls
+    case none
+
+    /// The watchface choice decides, since Complication then runs in the watchface slot.
+    public init(_ settings: GarminWatchSettings) {
+        if settings.watchface == .complication {
+            self = .complication
+        } else {
+            self = settings.isCommandControlEnabled ? .watchControls : .none
+        }
+    }
+
+    public var appUUID: UUID? {
+        switch self {
+        case .complication: return GarminWatchface.complication.watchfaceUUID
+        case .watchControls: return GarminWatchControls.appUUID
+        case .none: return nil
+        }
+    }
+
+    public var displayName: String {
+        switch self {
+        case .complication: return GarminWatchface.complication.displayName
+        case .watchControls: return GarminWatchControls.displayName
+        case .none: return LocalizedString("None", comment: "Garmin command app: none")
+        }
+    }
+
+    /// Both command apps, whichever is current.
+    public static let appUUIDs = Set([GarminWatchface.complication.watchfaceUUID, GarminWatchControls.appUUID].compactMap { $0 })
+}
+
 // MARK: - Settings
 
 /// The plugin's settings, saved in its `rawState`.

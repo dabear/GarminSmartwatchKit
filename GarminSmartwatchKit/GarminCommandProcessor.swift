@@ -55,7 +55,10 @@ final class GarminCommandAuthorization: @unchecked Sendable {
     func settingsWillChange(from old: GarminWatchSettings, to new: GarminWatchSettings) {
         let masterTurnedOff = old.isCommandControlEnabled && !new.isCommandControlEnabled
         let bolusTurnedOff = old.isBolusCommandEnabled && !new.isBolusCommandEnabled
-        guard masterTurnedOff || bolusTurnedOff else { return }
+        // With no command app before, nothing could be pending.
+        let oldCommandApp = GarminCommandApp(old)
+        let commandAppChanged = oldCommandApp != .none && oldCommandApp != GarminCommandApp(new)
+        guard masterTurnedOff || bolusTurnedOff || commandAppChanged else { return }
         lock.withLock { epoch += 1 }
     }
 }
@@ -283,6 +286,10 @@ actor GarminCommandInsulinLane {
         guard settings.isCommandControlEnabled else {
             log("Garmin: \(name) rejected - watch commands disabled")
             return .failure(GarminCommandMessage.commandsDisabled)
+        }
+        guard GarminCommandApp(settings).appUUID == request.appUUID else {
+            log("Garmin: \(name) rejected - sent by an app that isn't the command app")
+            return .failure(GarminCommandMessage.notCommandApp)
         }
         guard !request.command.isInsulin || settings.isBolusCommandEnabled else {
             log("Garmin: \(name) rejected - bolus commands disabled")
@@ -637,6 +644,7 @@ private enum GarminCommandMessage {
     static var settingsChanged: String { LocalizedString("Watch command settings changed.", comment: "Garmin watch command ack") }
     static var commandsDisabled: String { LocalizedString("Watch commands are disabled.", comment: "Garmin watch command ack") }
     static var bolusDisabled: String { LocalizedString("Bolus from watch is disabled.", comment: "Garmin watch command ack") }
+    static var notCommandApp: String { LocalizedString("Commands are handled by another watch app.", comment: "Garmin watch command ack") }
     static var notAllowed: String { LocalizedString("Not allowed from the watch.", comment: "Garmin watch command ack") }
 
     static var invalidBolus: String { LocalizedString("Invalid bolus amount.", comment: "Garmin watch command ack") }

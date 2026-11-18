@@ -37,6 +37,9 @@ enum GarminMessageKey {
     static let maxBolus = "maxBolus"
     static let maxCarbs = "maxCarbs"
     static let bolusIncrement = "bolusIncrement"
+
+    static let isCommandAppActive = "active"
+    static let commandApp = "owner"
 }
 
 /// A message received from a Connect IQ app, after envelope validation.
@@ -49,6 +52,11 @@ enum GarminInboundMessage: Equatable {
     case command(requestIDString: String, requestID: UUID, date: Date, command: GarminWatchCommand)
     /// Malformed or unsupported; carries the request ID when the envelope still named one to answer.
     case invalid(requestID: String?)
+
+    var isCommand: Bool {
+        if case .command = self { return true }
+        return false
+    }
 
     /// Never includes payload values: a command body can carry an insulin amount.
     var logName: String {
@@ -71,6 +79,7 @@ enum GarminCommandEnvelope {
         case presets
         case command
         case ack
+        case ownerMode
     }
 
     private static let readEnvelopeKeys: Set<String> = [GarminMessageKey.protocolVersion, GarminMessageKey.request]
@@ -117,7 +126,8 @@ enum GarminCommandEnvelope {
             }
             let date = Date(timeIntervalSince1970: Double(milliseconds) / 1000)
             return .command(requestIDString: requestIDString, requestID: requestID, date: date, command: command)
-        case .ack:
+        case .ack,
+             .ownerMode:
             return .invalid(requestID: requestIDString)
         }
     }
@@ -130,6 +140,17 @@ enum GarminCommandEnvelope {
             GarminMessageKey.acknowledged: result.acknowledged,
             GarminMessageKey.ackCode: result.ackCode.rawValue,
             GarminMessageKey.message: result.message
+        ]
+    }
+
+    /// Tells a command app whether it is the one whose commands run; `owner` lets an inactive one
+    /// say which app is.
+    static func commandAppNotice(isActive: Bool, commandApp: GarminCommandApp) -> [String: Any] {
+        [
+            GarminMessageKey.protocolVersion: protocolVersion,
+            GarminMessageKey.request: Request.ownerMode.rawValue,
+            GarminMessageKey.isCommandAppActive: isActive,
+            GarminMessageKey.commandApp: commandApp.rawValue
         ]
     }
 
@@ -232,7 +253,7 @@ struct GarminCommandRouter {
         var reply: [String: Any]?
         /// The watch asked for the regular watch state.
         var refreshesState = false
-        /// A preset started or stopped, so every Complication app needs the preset list.
+        /// A preset started or stopped, so the command app needs the preset list.
         var pushesPresets = false
 
         static let none = Outcome()
@@ -241,11 +262,19 @@ struct GarminCommandRouter {
     let processor: GarminCommandProcessing
     var log: (String) -> Void
 
-    func route(_ message: Any, from appUUID: UUID, isRegistered: Bool, appName: String) async -> Outcome {
+    /// A command app that isn't registered still gets its commands answered, so a watch that missed
+    /// the switch to the other command app sees a refusal instead of waiting for an ack that never comes.
+    func route(
+        _ message: Any,
+        from appUUID: UUID,
+        isRegistered: Bool,
+        isCommandApp: Bool = false,
+        appName: String
+    ) async -> Outcome {
         let inbound = GarminCommandEnvelope.parse(message)
         log("Garmin \(appName): received \(inbound.logName)")
 
-        guard isRegistered else {
+        guard isRegistered || (isCommandApp && inbound.isCommand) else {
             log("Garmin: ignored \(inbound.logName) from unregistered app \(appUUID.uuidString)")
             return .none
         }

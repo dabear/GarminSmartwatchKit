@@ -47,10 +47,11 @@ private final class LogCapture {
         _ message: Any,
         via processor: SpyProcessor,
         registered: Bool = true,
+        isCommandApp: Bool = false,
         logs: LogCapture = LogCapture()
     ) async -> GarminCommandRouter.Outcome {
         let router = GarminCommandRouter(processor: processor, log: logs.record)
-        return await router.route(message, from: appUUID, isRegistered: registered, appName: "test")
+        return await router.route(message, from: appUUID, isRegistered: registered, isCommandApp: isCommandApp, appName: "test")
     }
 
     @Test("Status requests refresh the watch state and send no reply")
@@ -83,6 +84,80 @@ private final class LogCapture {
         }
         #expect(processor.processed.isEmpty)
         #expect(processor.presetsRequested == 0)
+    }
+
+    @Test("An unregistered command app's command reaches the processor and is answered")
+    func unregisteredCommandApp() async throws {
+        let processor = SpyProcessor()
+        processor.result = .failure("Commands are handled by another watch app.")
+
+        let outcome = await route(
+            envelope(command: "carbs", payload: ["carbs": 10]), via: processor, registered: false, isCommandApp: true
+        )
+
+        let reply = try #require(outcome.reply)
+        #expect(reply["req"] as? String == "ack")
+        #expect(reply["requestId"] as? String == requestID)
+        #expect(reply["acknowledged"] as? Bool == false)
+        #expect(reply["message"] as? String == "Commands are handled by another watch app.")
+        #expect(outcome.refreshesState == false)
+        #expect(processor.processed.count == 1)
+        #expect(processor.processed.first?.appUUID == appUUID)
+        #expect(processor.processed.first?.command == .carbs(10))
+    }
+
+    @Test("An unregistered command app gets nothing but its commands through")
+    func unregisteredCommandAppOtherMessages() async {
+        let processor = SpyProcessor()
+        let messages: [Any] = [
+            "status",
+            ["v": 1, "req": "status"] as [String: Any],
+            ["v": 1, "req": "presets"] as [String: Any],
+            ["v": 1, "req": "ack"] as [String: Any],
+            ["v": 1, "req": "ownerMode", "requestId": requestID] as [String: Any],
+            ["v": 1, "req": "command", "requestId": requestID] as [String: Any],
+            envelope(command: "carbs", payload: ["carbs": "ten"]),
+            42
+        ]
+        for message in messages {
+            let outcome = await route(message, via: processor, registered: false, isCommandApp: true)
+            #expect(outcome.reply == nil, "\(message)")
+            #expect(outcome.refreshesState == false)
+            #expect(outcome.pushesPresets == false)
+        }
+        #expect(processor.presetsRequested == 0)
+        #expect(processor.processed.isEmpty)
+    }
+
+    @Test("An unregistered app that is not the command app is ignored, commands included")
+    func unregisteredNonCommandApp() async {
+        let processor = SpyProcessor()
+        let messages: [Any] = [
+            envelope(command: "carbs", payload: ["carbs": 10]),
+            envelope(command: "bolus", payload: ["bolus": 1]),
+            "status",
+            ["v": 1, "req": "presets"] as [String: Any]
+        ]
+        for message in messages {
+            let outcome = await route(message, via: processor, registered: false, isCommandApp: false)
+            #expect(outcome.reply == nil)
+            #expect(outcome.refreshesState == false)
+            #expect(outcome.pushesPresets == false)
+        }
+        #expect(processor.processed.isEmpty)
+        #expect(processor.presetsRequested == 0)
+    }
+
+    @Test("A command refused for an unregistered command app pushes no presets")
+    func unregisteredCommandAppRefusalPushesNothing() async {
+        let processor = SpyProcessor()
+        processor.result = .failure("Commands are handled by another watch app.")
+        let outcome = await route(
+            envelope(command: "activateOverride", payload: ["name": "Sport"]), via: processor, registered: false, isCommandApp: true
+        )
+        #expect(outcome.pushesPresets == false)
+        #expect(outcome.reply?["acknowledged"] as? Bool == false)
+        #expect(processor.processed.count == 1)
     }
 
     @Test("A preset request gets a targeted presets reply and no refresh")
