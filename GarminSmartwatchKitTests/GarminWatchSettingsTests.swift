@@ -318,9 +318,9 @@ import Testing
 
     @Test("Each watch app declares its forecast format: LoopGraph mountrcg's pairs, the others the cone")
     func declaredForecastFormats() {
-        #expect(GarminWatchface.allCases.allSatisfy { $0.forecastFormat == .cone })
-        #expect(GarminDatafield.trio.forecastFormat == .cone)
-        #expect(GarminDatafield.swissalpine.forecastFormat == .cone)
+        #expect(GarminWatchface.allCases.allSatisfy { $0.forecastFormat == GarminForecastFormat.none })
+        #expect(GarminDatafield.trio.forecastFormat == GarminForecastFormat.none)
+        #expect(GarminDatafield.swissalpine.forecastFormat == GarminForecastFormat.none)
         #expect(GarminDatafield.loopgraph.forecastFormat == .predictedPairs)
         #expect(GarminDatafield.none.forecastFormat == GarminForecastFormat.none)
     }
@@ -331,16 +331,24 @@ import Testing
         settings.watchface = .trio
         settings.isWatchfaceDataEnabled = true
         settings.datafields = [.loopgraph]
-        #expect(settings.forecastFormats() == [.cone, .predictedPairs])
+        #expect(settings.forecastFormats() == [.predictedPairs], "the published apps read no forecast")
 
         settings.isWatchfaceDataEnabled = false
-        #expect(settings.forecastFormats() == [.predictedPairs], "a watchface that gets no data adds no format")
+        #expect(settings.forecastFormats() == [.predictedPairs])
 
         settings.datafields = []
         #expect(settings.forecastFormats().isEmpty)
 
         settings.datafields = [.trio, .swissalpine]
-        #expect(settings.forecastFormats() == [.cone])
+        #expect(settings.forecastFormats().isEmpty)
+    }
+
+    @Test("LoopGraph is registered under both of its app IDs") func loopGraphIDs() {
+        #expect(GarminDatafield.loopgraph.datafieldUUIDs.map(\.uuidString) == [
+            "2E18AAA2-2B57-47D3-8ACE-F9CD27C0D765", "986105B6-5D20-4895-A5C1-B98248DDDE4C"
+        ])
+        #expect(GarminDatafield.trio.datafieldUUIDs.count == 1)
+        #expect(GarminDatafield.none.datafieldUUIDs.isEmpty)
     }
 
     @Test("Forecasts off in code: no format for any app")

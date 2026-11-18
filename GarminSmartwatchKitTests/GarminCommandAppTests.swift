@@ -28,7 +28,10 @@ import Testing
         ]
     ) func fromSettings(watchface: GarminWatchface, commands: Bool, expected: GarminCommandApp) {
         #expect(GarminCommandApp(settings(watchface, commands: commands)) == expected)
-        #expect(GarminCommandApp(settings(watchface, commands: commands, isWatchfaceDataEnabled: false)) == expected)
+        // With Send to Watchface off Complication isn't registered, so it isn't the command app.
+        let withoutWatchfaceData: GarminCommandApp = watchface == .complication
+            ? (commands ? .watchControls : .none) : expected
+        #expect(GarminCommandApp(settings(watchface, commands: commands, isWatchfaceDataEnabled: false)) == withoutWatchfaceData)
     }
 
     @Test("The bolus switch does not change the command app") func bolusSwitchIrrelevant() {

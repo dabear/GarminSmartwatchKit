@@ -611,11 +611,12 @@ final class DeliveryRig {
     @Test("Each chosen datafield on each device gets its own send and its own delivery key")
     func severalDatafields() {
         let rig = DeliveryRig(isWatchfaceDataEnabled: false, datafields: [.trio, .swissalpine, .loopgraph])
-        #expect(rig.spy.registeredApps.count == 6)
+        // LoopGraph is registered under both of its app IDs: 4 apps per device.
+        #expect(rig.spy.registeredApps.count == 8)
 
         rig.broadcast(120)
-        #expect(rig.spy.sent.count == 6)
-        let fields = [rig.trioFieldUUID, rig.swissalpineUUID, rig.loopgraphUUID]
+        #expect(rig.spy.sent.count == 8)
+        let fields = [rig.trioFieldUUID, rig.swissalpineUUID] + GarminDatafield.loopgraph.datafieldUUIDs
         var keys = Set<String>()
         for uuid in fields {
             for device in [rig.deviceA, rig.deviceB] {
@@ -623,7 +624,7 @@ final class DeliveryRig {
                 keys.insert(rig.key(uuid, on: device))
             }
         }
-        #expect(keys.count == 6)
+        #expect(keys.count == 8)
         #expect(Set(rig.manager.lastSentDataHashes.keys) == keys)
     }
 

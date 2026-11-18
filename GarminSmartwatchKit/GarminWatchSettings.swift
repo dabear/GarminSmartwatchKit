@@ -90,7 +90,8 @@ public enum GarminWatchface: String, CaseIterable, Identifiable, Codable, Hashab
     /// The forecast keys this watch app reads; `.none` sends it none.
     public var forecastFormat: GarminForecastFormat {
         switch self {
-        case .trio, .swissalpine, .complication: return .cone
+        // Built against upstream Trio, which never sent a forecast: none until one reads it.
+        case .trio, .swissalpine, .complication: return .none
         }
     }
 
@@ -135,21 +136,29 @@ public enum GarminDatafield: String, CaseIterable, Identifiable, Codable, Hashab
         }
     }
 
-    /// The Connect IQ store apps (live builds, except LoopGraph's, as in Tai).
-    public var datafieldUUID: UUID? {
+    /// The Connect IQ store apps (live builds), except LoopGraph's; see `datafieldUUIDs`.
+    public var datafieldUUID: UUID? { datafieldUUIDs.first }
+
+    /// Every app ID this datafield may run under. LoopGraph isn't on the Connect IQ store: the
+    /// public source (elnjensen/LoopGraphDatafield, sideloaded) uses 2e18aaa2…, Tai a beta build
+    /// 986105b6…. Both are registered; the one not installed is marked absent.
+    public var datafieldUUIDs: [UUID] {
+        let ids: [String]
         switch self {
-        case .trio: return UUID(uuidString: "3d9b6528-8c84-459a-bbab-989b5f001ebd")
-        case .swissalpine: return UUID(uuidString: "dec5292a-74b0-41bc-8e45-cd93f1d5e137")
-        // Tai's beta build; check it is published before relying on it.
-        case .loopgraph: return UUID(uuidString: "986105b6-5d20-4895-a5c1-b98248ddde4c")
-        case .none: return nil
+        case .trio: ids = ["3d9b6528-8c84-459a-bbab-989b5f001ebd"]
+        case .swissalpine: ids = ["dec5292a-74b0-41bc-8e45-cd93f1d5e137"]
+        case .loopgraph: ids = ["2e18aaa2-2b57-47d3-8ace-f9cd27c0d765", "986105b6-5d20-4895-a5c1-b98248ddde4c"]
+        case .none: ids = []
         }
+        return ids.compactMap(UUID.init(uuidString:))
     }
 
     /// The forecast keys this datafield reads; `.none` sends it none.
     public var forecastFormat: GarminForecastFormat {
         switch self {
-        case .trio, .swissalpine: return .cone
+        // The Trio datafield reads only the first entry's values; SwissAlpine was built
+        // against upstream Trio, which never sent a forecast.
+        case .trio, .swissalpine: return .none
         case .loopgraph: return .predictedPairs
         case .none: return .none
         }
@@ -198,7 +207,7 @@ public enum GarminForecastFormat: String, CaseIterable, Hashable, Sendable {
     /// 70 minutes, which LoopGraph was built against.
     case predictedPairs
 
-    /// Turns forecasts off for every watch app, whatever each declares.
+    /// Set to `false` to send no forecast to any watch app, whatever each declares.
     public static let isEnabled = true
 }
 
@@ -218,9 +227,10 @@ public enum GarminCommandApp: String, Sendable {
     case watchControls
     case none
 
-    /// The watchface choice decides, since Complication then runs in the watchface slot.
+    /// The watchface choice decides, since Complication then runs in the watchface slot; only
+    /// while it gets data, as it isn't registered otherwise.
     public init(_ settings: GarminWatchSettings) {
-        if settings.watchface == .complication {
+        if settings.watchface == .complication, settings.isWatchfaceDataEnabled {
             self = .complication
         } else {
             self = settings.isCommandControlEnabled ? .watchControls : .none

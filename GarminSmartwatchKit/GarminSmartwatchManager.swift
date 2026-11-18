@@ -240,7 +240,7 @@ public final class GarminSmartwatchManager: NSObject {
     private func appDisplayName(for uuid: UUID) -> String {
         if uuid == currentWatchface.watchfaceUUID {
             return "watchface:\(currentWatchface.displayName)"
-        } else if let datafield = currentDatafields.first(where: { $0.datafieldUUID == uuid }) {
+        } else if let datafield = currentDatafields.first(where: { $0.datafieldUUIDs.contains(uuid) }) {
             return "datafield:\(datafield.displayName)"
         } else if uuid == GarminWatchControls.appUUID {
             return "watch app:\(GarminWatchControls.displayName)"
@@ -335,10 +335,8 @@ public final class GarminSmartwatchManager: NSObject {
             }
 
             // Every chosen datafield; all of them get the same broadcast.
-            for datafield in currentDatafields {
-                guard let datafieldUUID = datafield.datafieldUUID,
-                      let datafieldApp = IQApp(uuid: datafieldUUID, store: UUID(), device: device)
-                else { continue }
+            for datafieldUUID in currentDatafields.flatMap(\.datafieldUUIDs) {
+                guard let datafieldApp = IQApp(uuid: datafieldUUID, store: UUID(), device: device) else { continue }
                 log("Registered Garmin \(appDetailedName(for: datafieldUUID))")
                 watchApps.append(datafieldApp)
                 connectIQClient?.registerApp(datafieldApp, delegate: self)
