@@ -217,9 +217,12 @@ struct GarminSettingsView: View {
         } header: {
             Text(LocalizedString("Commands", comment: "Garmin settings: commands section"))
         } footer: {
-            Text(LocalizedString("Commands are accepted from one watch app: Complication when it is the watchface and Send to Watchface is on, otherwise Trio-WatchControls. Choosing or leaving Complication switches the command app at once and cancels commands still pending. Carbs and presets (overrides, and temp targets where the app has them) need the first switch; bolus and meal bolus need the second as well. Both are off by default. A watch bolus needs a glucose reading from the last 15 minutes and is refused within 6 minutes of the previous watch bolus; a command older than 2 minutes is refused. The app still applies its own maximum bolus and carb limits, and Trio its maximum IOB.", comment: "Garmin settings: commands footer"))
-                + Text(verbatim: "\n\n")
-                + Text(LocalizedString("Only enable this if you keep your watch locked and under your control.", comment: "Garmin settings: commands warning")).bold()
+            VStack(alignment: .leading, spacing: 8) {
+                Text(LocalizedString("Lets your Garmin watch log carbs and start overrides. Allow Bolus Commands also lets it give boluses. Both are off by default.
+
+A watch bolus needs a glucose reading from the last 15 minutes and must come at least 6 minutes after the previous watch bolus. The app still applies its maximum bolus.", comment: "Garmin settings: commands footer"))
+                Text(LocalizedString("Only turn this on if you keep your watch locked and with you.", comment: "Garmin settings: commands warning")).bold()
+            }
         }
     }
 

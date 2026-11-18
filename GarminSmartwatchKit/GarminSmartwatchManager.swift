@@ -1022,7 +1022,8 @@ extension GarminSmartwatchManager: SmartwatchManager {
     }
 
     /// Reads what the watch shows; `nil` when the readings can't be read.
-    private func readHostData(from delegate: SmartwatchManagerDelegate) async -> GarminHostData? {
+    /// On the main actor: its error log goes to the host's delegate, which expects the main thread.
+    @MainActor private func readHostData(from delegate: SmartwatchManagerDelegate) async -> GarminHostData? {
         let samples: [StoredGlucoseSample]
         do {
             samples = try await delegate.smartwatchManager(self, glucoseSamplesSince: GarminHostData.readingsStart())
