@@ -21,6 +21,8 @@ final class SpyConnectIQClient: GarminConnectIQClient, @unchecked Sendable {
     private(set) var notices: [Sent] = []
     private(set) var registeredDevices: [UUID] = []
     private(set) var registeredApps: [(appUUID: UUID, deviceUUID: UUID)] = []
+    /// Sends made off the main thread; delivery state lives on main, so this stays 0.
+    private(set) var offMainSends = 0
 
     /// When on, a send is not answered until `completePending` is called.
     var holdsCompletions = false
@@ -52,6 +54,7 @@ final class SpyConnectIQClient: GarminConnectIQClient, @unchecked Sendable {
     func send(_ message: Any, to app: IQApp, completion: @escaping (IQSendMessageResult) -> Void) {
         let deviceUUID: UUID = app.device.uuid
         let record = Sent(message: message, appUUID: app.uuid, deviceUUID: deviceUUID)
+        if !Thread.isMainThread { offMainSends += 1 }
         if (message as? [String: Any])?["req"] as? String == "ownerMode" {
             notices.append(record)
         } else {
@@ -91,8 +94,9 @@ final class SpyConnectIQClient: GarminConnectIQClient, @unchecked Sendable {
     }
 }
 
+/// Shared with the threading tests.
 @MainActor
-private final class DeliveryRig {
+final class DeliveryRig {
     let spy = SpyConnectIQClient()
     let manager = GarminSmartwatchManager()
     let deviceA = IQDevice(id: UUID(), modelName: "fenix 8", friendlyName: "A")!
