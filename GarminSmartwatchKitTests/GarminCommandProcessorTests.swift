@@ -459,7 +459,6 @@ import Testing
 
         #expect(result == .failure("No recent glucose reading."))
         #expect(host.calls.isEmpty)
-        #expect(host.recommendationReads.isEmpty)
     }
 
     @Test("A meal bolus refused before its carbs leaves no hold behind") func mealBolusRefusedBeforeCarbsNoHold() async {
@@ -468,15 +467,6 @@ import Testing
 
         host.glucoseAge = 60
         #expect(await processor.process(request(.bolus(1))).acknowledged)
-    }
-
-    @Test("A meal bolus over the recommendation keeps its carbs: the recommendation counts them") func mealBolusOverRecommendation() async {
-        host.recommendation = 1
-        let result = await processor.process(request(.mealBolus(carbs: 40, bolus: 3)))
-
-        #expect(result == GarminWatchCommandResult(acknowledged: false, ackCode: .partialFailure, message: "Carbs logged. No bolus was delivered."))
-        #expect(host.carbCalls.count == 1)
-        #expect(host.bolusCalls.isEmpty)
     }
 
     // MARK: - Deduplication
@@ -631,7 +621,7 @@ import Testing
             isBolusCommandEnabled: false,
             maxBolus: 7.5,
             maxCarbs: 120,
-            bolusIncrement: 0
+            bolusIncrement: 0.05
         ))
 
         host.maxBolus = nil
@@ -647,11 +637,20 @@ import Testing
             ([0, 0.025, 0.05, 0.075, 1.0, 1.05], "0.025"),
             ([0.1, 0.05, 0.1, 0.2], "0.05"),
             ([0.5], "0.5"),
-            ([] as [Double], "0")
+            ([] as [Double], "0.05")
         ]
     ) func bolusIncrement(volumes: [Double], expected: String) async {
         host.volumes = volumes
         #expect(await processor.presets().capabilities.bolusIncrement == Decimal(string: expected))
+    }
+
+    @Test("Without supported volumes (no pump) bolus is reported off, with a non-zero increment")
+    func noPumpCapabilities() async {
+        host.volumes = []
+        #expect(await processor.presets().capabilities.isBolusCommandEnabled == false)
+        #expect(await processor.presets().capabilities.bolusIncrement == 0.05)
+        host.volumes = [0.05, 0.1]
+        #expect(await processor.presets().capabilities.isBolusCommandEnabled == true)
     }
 
     // MARK: - Revocation while waiting
@@ -795,17 +794,17 @@ import Testing
     ) func expiredInLane(isMeal: Bool) async {
         // parked before its enactment is recorded, so a meal's pre-checks see no hold and its
         // carbs are added before it waits in the lane
-        host.recommendationGate = GarminTestGate()
+        host.firstGlucoseGate = GarminTestGate()
         host.bolusErrors = [SmartwatchActionError.exceedsMaximum]
         let first = Task { await processor.process(request(.bolus(2))) }
-        await host.recommendationGate?.waitForArrivals()
+        await host.firstGlucoseGate?.waitForArrivals()
         let command: GarminWatchCommand = isMeal ? .mealBolus(carbs: 30, bolus: 1) : .bolus(1)
         let second = Task { await processor.process(request(command, age: GarminCommandProcessor.maximumCommandAge - 10)) }
         #expect(await garminEventually { await lane.waitingCount == 1 })
         #expect(host.carbCalls.count == (isMeal ? 1 : 0))
 
         clock.advance(by: 20)
-        host.recommendationGate?.open()
+        host.firstGlucoseGate?.open()
         #expect(await first.value.acknowledged == false)
         let result = await second.value
 
@@ -867,12 +866,6 @@ import Testing
     /// Age of the newest glucose reading on the test clock; `nil`: none.
     var glucoseAge: TimeInterval? = 60
     /// Generous by default, so only tests about it reach it.
-    var recommendation: Double = 100
-    /// Added per gram of carbs the host was given, for a recommendation that counts them.
-    var recommendationPerGram: Double = 0
-    var recommendationError: Error?
-    /// The number of carb entries the host had at each recommendation read.
-    private(set) var recommendationReads: [Int] = []
     private(set) var glucoseReads = 0
 
     /// One entry per bolus call, used up in order; `nil` or empty delivers.
@@ -887,7 +880,7 @@ import Testing
     var runningTempTarget: TemporaryScheduleOverride?
     var maxBolus: Double? = 10
     var maxCarbs: Double? = 100
-    var volumes: [Double] = []
+    var volumes: [Double] = [0.05, 0.1, 0.15]
 
     /// Park a call after it was recorded, so the request counts as received by the host.
     var bolusGate: GarminTestGate?
@@ -895,7 +888,7 @@ import Testing
     /// Park a read before the processor gets its answer.
     var presetsGate: GarminTestGate?
     var maxCarbsGate: GarminTestGate?
-    var recommendationGate: GarminTestGate?
+    var firstGlucoseGate: GarminTestGate?
 
     var bolusCalls: [Double] {
         calls.compactMap { if case let .bolus(units) = $0 { return units } else { return nil } }
@@ -956,14 +949,9 @@ import Testing
 
     func latestGlucoseDate() async -> Date? {
         glucoseReads += 1
+        // parks only the first read, so a later command's pre-checks aren't held behind it
+        if glucoseReads == 1 { await firstGlucoseGate?.pass() }
         return glucoseAge.map { clock.now.addingTimeInterval(-$0) }
-    }
-
-    func recommendedBolus() async throws -> Double {
-        recommendationReads.append(carbCalls.count)
-        await recommendationGate?.pass()
-        if let recommendationError { throw recommendationError }
-        return recommendation + recommendationPerGram * carbCalls.reduce(0, +)
     }
 }
 

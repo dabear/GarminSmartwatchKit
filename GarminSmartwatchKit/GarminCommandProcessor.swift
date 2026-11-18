@@ -41,9 +41,6 @@ protocol GarminCommandProcessing {
     /// When the newest stored glucose reading was taken; `nil` when there is none recent or it
     /// can't be read.
     func latestGlucoseDate() async -> Date?
-    /// The host's bolus recommendation now with no carbs added, in units; carbs already added
-    /// count. Throws `SmartwatchActionError`.
-    func recommendedBolus() async throws -> Double
 }
 
 /// Revocation epoch for watch commands; a command admitted under an older epoch was revoked.
@@ -133,9 +130,6 @@ actor GarminCommandInsulinLane {
 /// instead, as for Luped. What stands in for it here, for every bolus and meal bolus, inside the
 /// insulin lane right before the final check:
 /// - the newest glucose reading is at most `maximumGlucoseAge` old;
-/// - the units, rounded down to a supported volume, are at most the host's recommendation read
-///   then (after a meal's carbs were added, so it counts them and every bolus so far), rounded
-///   the same way; nothing when it recommends 0 U or less or can't recommend;
 /// - the `minimumBolusInterval` hold, kept across relaunches.
 /// There is no forced bolus. Maximum bolus, maximum IOB, maximum carbs and rounding are the
 /// host's.
@@ -154,8 +148,6 @@ actor GarminCommandInsulinLane {
     /// A watch bolus needs a glucose reading at most this old (Luped's limit); on the watch the
     /// user may not see that glucose is missing.
     static let maximumGlucoseAge: TimeInterval = 15 * 60
-    /// Tolerance for comparing rounded volumes.
-    static let volumeTolerance = 0.0001
 
     /// Weak: the host owns the processor.
     private weak var host: GarminCommandHost?
@@ -240,7 +232,10 @@ actor GarminCommandInsulinLane {
             },
             capabilities: GarminWatchCommandCapabilities(
                 isCommandControlEnabled: settings.isCommandControlEnabled,
-                isBolusCommandEnabled: settings.isCommandControlEnabled && settings.isBolusCommandEnabled,
+                // Without supported volumes (no pump) the host refuses every bolus, so the watch
+                // isn't offered one.
+                isBolusCommandEnabled: settings.isCommandControlEnabled && settings.isBolusCommandEnabled
+                    && !volumes.isEmpty,
                 maxBolus: Self.decimal(maxBolus),
                 maxCarbs: Self.decimal(maxCarbs),
                 bolusIncrement: Self.bolusIncrement(volumes)
@@ -417,7 +412,6 @@ actor GarminCommandInsulinLane {
 
     /// The bolus checks that can be made before a meal's carbs are added, so a meal bolus that
     /// would be refused for them adds nothing. The insulin lane checks all of them again.
-    /// The recommendation is not among them: it must count the carbs.
     private func mealBolusRejectionBeforeCarbs(request: GarminWatchCommandRequest, grant: UInt64) async -> String? {
         if let rejection = expiryRejection(for: request) ?? authorizationRejection(for: request, grant: grant) {
             return rejection.message
@@ -478,24 +472,12 @@ actor GarminCommandInsulinLane {
             return .rejected(message)
         }
 
-        // Read now, in the lane, so they count every bolus before this one and a meal's carbs.
+        // Read now, in the lane, so a reading that went stale while the bolus waited stops it.
         guard let host else { return .rejected(GarminCommandMessage.commandsDisabled) }
         if let message = glucoseRejection(await host.latestGlucoseDate(), request: request) {
             return .rejected(message)
         }
-        let recommendation: Double
-        do {
-            recommendation = try await host.recommendedBolus()
-        } catch {
-            log("Garmin: bolus rejected - no recommendation from the host (\(Self.logDescription(error)))")
-            return .rejected(message(for: error, action: .bolus))
-        }
-        let volumes = await host.supportedBolusVolumes()
         let requested = NSDecimalNumber(decimal: units).doubleValue
-        guard Self.isWithinRecommendation(requested, recommendation: recommendation, volumes: volumes) else {
-            log("Garmin: bolus rejected - above the host's recommendation, or none recommended")
-            return .rejected(GarminCommandMessage.bolusAboveRecommendation)
-        }
 
         // recorded before the request, since a pump error can still mean partial delivery
         let enactment = now()
@@ -534,21 +516,6 @@ actor GarminCommandInsulinLane {
             return GarminCommandMessage.noRecentGlucose
         }
         return nil
-    }
-
-    /// Luped's rule: the requested units, rounded down to a supported volume, may not exceed the
-    /// recommendation rounded the same way; nothing when the host recommends 0 U or less.
-    static func isWithinRecommendation(_ units: Double, recommendation: Double, volumes: [Double]) -> Bool {
-        guard units.isFinite, recommendation.isFinite, recommendation > 0 else { return false }
-        return roundToSupportedVolume(units, volumes: volumes)
-            <= roundToSupportedVolume(recommendation, volumes: volumes) + volumeTolerance
-    }
-
-    /// Rounds down to a volume the pump supports, as `PumpManager` does by default; unchanged
-    /// without volumes (no pump), where the host refuses.
-    static func roundToSupportedVolume(_ units: Double, volumes: [Double]) -> Double {
-        guard !volumes.isEmpty else { return units }
-        return volumes.filter { $0 <= units }.max() ?? 0
     }
 
     // MARK: - Adjustments
@@ -638,8 +605,12 @@ actor GarminCommandInsulinLane {
     private static func bolusIncrement(_ volumes: [Double]) -> Decimal {
         let sorted = Set(volumes.filter { $0.isFinite && $0 > 0 }.map { decimal($0) }).sorted()
         let gaps = zip(sorted, sorted.dropFirst()).map { $1 - $0 }.filter { $0 > 0 }
-        return gaps.min() ?? sorted.first ?? 0
+        // Never 0: the watch apps step their bolus picker by it. Without volumes (no pump) bolus
+        // is reported off; 0.05 U is only a placeholder.
+        return gaps.min() ?? sorted.first ?? Self.placeholderBolusIncrement
     }
+
+    static let placeholderBolusIncrement: Decimal = 0.05
 
     /// Rounded to 6 places, so 0.05 is reported as 0.05 and not its binary approximation; 0 when
     /// unknown or not a positive number.
