@@ -1045,6 +1045,15 @@ extension GarminSmartwatchManager: SmartwatchManager {
     /// completions from sending anything afterwards.
     public func delete() async {
         await MainActor.run {
+            // Command apps told they are active stand down, so their commands aren't left
+            // unanswered; sent once, nothing waits for or retries it.
+            let notice = GarminCommandEnvelope.commandAppNotice(isActive: false, commandApp: .none)
+            for app in watchApps {
+                guard let key = deliveryKey(for: app), announcedCommandApps.contains(key) else { continue }
+                let appName = appDisplayName(for: app.uuid)
+                log("Sending command app notice to Garmin \(appName), inactive (plugin deleted)")
+                connectIQClient?.send(notice, to: app) { _ in }
+            }
             isDeleted = true
             readTask?.cancel()
             readTask = nil

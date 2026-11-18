@@ -819,4 +819,24 @@ private func carbsCommand(id: String = "3f2b8c1e-4a5d-4e6f-9a7b-1c2d3e4f5a6b") -
         #expect(rig.manager.owedDeliveries[rig.key(rig.trioUUID, on: rig.deviceA)]?.presets != true)
         #expect(rig.presets(to: rig.watchControlsUUID).isEmpty)
     }
+
+    // MARK: - Delete
+
+    @Test("Deleting the plugin tells announced command apps to stand down, once, naming no app")
+    func standDownOnDelete() async {
+        let rig = CommandAppRig(watchface: .trio, commands: true)
+        await rig.manager.delete()
+
+        for device in [rig.deviceA, rig.deviceB] {
+            #expect(rig.notices(to: rig.watchControlsUUID, on: device) == [.active("watchControls"), .inactive("none")])
+        }
+        #expect(rig.notices(to: rig.trioUUID).isEmpty)
+    }
+
+    @Test("Deleting the plugin with commands never on sends no notice")
+    func noStandDownOnDeleteWithoutCommands() async {
+        let rig = CommandAppRig(watchface: .complication, commands: false)
+        await rig.manager.delete()
+        #expect(rig.spy.notices.isEmpty)
+    }
 }
