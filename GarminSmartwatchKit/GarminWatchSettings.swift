@@ -115,23 +115,55 @@ public enum GarminDatafield: String, CaseIterable, Identifiable, Codable, Hashab
 
     case trio
     case swissalpine
+    case loopgraph
+    /// Read from settings saved before several datafields could be chosen; never offered.
     case none
 
     public var displayName: String {
         switch self {
         case .trio: return LocalizedString("Trio", comment: "Garmin datafield: Trio")
         case .swissalpine: return LocalizedString("Swissalpine", comment: "Garmin datafield: SwissAlpine")
+        case .loopgraph: return LocalizedString("LoopGraph", comment: "Garmin datafield: LoopGraph")
         case .none: return LocalizedString("None", comment: "Garmin datafield: none")
         }
     }
 
-    /// The Connect IQ store apps (live builds).
+    /// The Connect IQ store apps (live builds, except LoopGraph's, as in Tai).
     public var datafieldUUID: UUID? {
         switch self {
         case .trio: return UUID(uuidString: "3d9b6528-8c84-459a-bbab-989b5f001ebd")
         case .swissalpine: return UUID(uuidString: "dec5292a-74b0-41bc-8e45-cd93f1d5e137")
+        // Tai's beta build; check it is published before relying on it.
+        case .loopgraph: return UUID(uuidString: "986105b6-5d20-4895-a5c1-b98248ddde4c")
         case .none: return nil
         }
+    }
+
+    /// How far back from the newest reading this datafield needs; see `GarminWatchface.historySpan`.
+    public var historySpan: TimeInterval {
+        switch self {
+        case .loopgraph: return 2 * 60 * 60
+        case .trio, .swissalpine, .none: return 0
+        }
+    }
+
+    /// The datafields the user can choose.
+    public static var selectableCases: [GarminDatafield] {
+        allCases.filter { $0 != .none }
+    }
+
+    /// Every chosen datafield is registered as its own Connect IQ app and gets
+    /// the same broadcast, so this caps how many apps one update goes to.
+    public static let maxSelectionCount = 4
+
+    /// Drops `.none` and duplicates and keeps at most `maxSelectionCount`, in order.
+    public static func sanitizedSelection(_ datafields: [GarminDatafield]) -> [GarminDatafield] {
+        var selection = [GarminDatafield]()
+        for datafield in datafields where datafield != .none && !selection.contains(datafield) {
+            selection.append(datafield)
+            if selection.count == maxSelectionCount { break }
+        }
+        return selection
     }
 }
 
@@ -140,14 +172,50 @@ public enum GarminDatafield: String, CaseIterable, Identifiable, Codable, Hashab
 /// The plugin's settings, saved in its `rawState`.
 public struct GarminWatchSettings: Codable, Hashable, Sendable {
     public var watchface: GarminWatchface = .trio
-    public var datafield: GarminDatafield = .trio
+    /// The datafields that get data, in the order chosen; empty for none.
+    /// Never more than `GarminDatafield.maxSelectionCount`.
+    public var datafields: [GarminDatafield] = [.trio] {
+        didSet {
+            let sanitized = GarminDatafield.sanitizedSelection(datafields)
+            if sanitized != datafields { datafields = sanitized }
+        }
+    }
     public var primaryAttributeChoice: GarminPrimaryAttributeChoice = .cob
     public var secondaryAttributeChoice: GarminSecondaryAttributeChoice = .tbr
     public var glucoseColorScheme: GarminGlucoseColorScheme = .staticColor
     /// Off while the user switches watchfaces on the watch, or uses only a datafield.
     public var isWatchfaceDataEnabled: Bool = true
+    /// Lets watch apps send carbs, override and temp target commands. Off until the user turns it on.
+    public var isCommandControlEnabled: Bool = false {
+        didSet {
+            // Turning commands back on never re-arms insulin by itself.
+            if !isCommandControlEnabled { isBolusCommandEnabled = false }
+        }
+    }
+    /// Also lets them send bolus and meal bolus commands; only while `isCommandControlEnabled` is on.
+    public var isBolusCommandEnabled: Bool = false
 
     public init() {}
+
+    /// Adds the datafield, or removes it when chosen already; an addition beyond the maximum is ignored.
+    public mutating func toggleDatafield(_ datafield: GarminDatafield) {
+        if let index = datafields.firstIndex(of: datafield) {
+            datafields.remove(at: index)
+        } else if datafield != .none, datafields.count < GarminDatafield.maxSelectionCount {
+            datafields.append(datafield)
+        }
+    }
+
+    /// Whether the datafield is chosen or can still be added.
+    public func canSelectDatafield(_ datafield: GarminDatafield) -> Bool {
+        datafields.contains(datafield) || datafields.count < GarminDatafield.maxSelectionCount
+    }
+
+    /// The longest history any chosen watch app needs; the broadcast goes to all of them.
+    public var historySpan: TimeInterval {
+        let datafieldSpan = datafields.map(\.historySpan).max() ?? 0
+        return max(watchface.historySpan, datafieldSpan)
+    }
 
     /// Each setting missing from what was saved (one added since) or no longer
     /// known (a choice removed since) takes its default, rather than all of them
@@ -159,20 +227,46 @@ public struct GarminWatchSettings: Codable, Hashable, Sendable {
         }
         let defaults = GarminWatchSettings()
         watchface = value(.watchface, or: defaults.watchface)
-        datafield = value(.datafield, or: defaults.datafield)
+        if let saved = (try? container.decodeIfPresent([GarminDatafield].self, forKey: .datafields)) ?? nil {
+            datafields = GarminDatafield.sanitizedSelection(saved)
+        } else if let single = (try? container.decodeIfPresent(GarminDatafield.self, forKey: .datafield)) ?? nil {
+            // Saved before several datafields could be chosen.
+            datafields = single == .none ? [] : [single]
+        } else {
+            datafields = defaults.datafields
+        }
         primaryAttributeChoice = value(.primaryAttributeChoice, or: defaults.primaryAttributeChoice)
         secondaryAttributeChoice = value(.secondaryAttributeChoice, or: defaults.secondaryAttributeChoice)
         glucoseColorScheme = value(.glucoseColorScheme, or: defaults.glucoseColorScheme)
         isWatchfaceDataEnabled = value(.isWatchfaceDataEnabled, or: defaults.isWatchfaceDataEnabled)
+        // Missing (saved by an older version) or unreadable: commands stay off.
+        isCommandControlEnabled = value(.isCommandControlEnabled, or: false)
+        isBolusCommandEnabled = isCommandControlEnabled && value(.isBolusCommandEnabled, or: false)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(watchface, forKey: .watchface)
+        try container.encode(datafields, forKey: .datafields)
+        try container.encode(primaryAttributeChoice, forKey: .primaryAttributeChoice)
+        try container.encode(secondaryAttributeChoice, forKey: .secondaryAttributeChoice)
+        try container.encode(glucoseColorScheme, forKey: .glucoseColorScheme)
+        try container.encode(isWatchfaceDataEnabled, forKey: .isWatchfaceDataEnabled)
+        try container.encode(isCommandControlEnabled, forKey: .isCommandControlEnabled)
+        try container.encode(isBolusCommandEnabled, forKey: .isBolusCommandEnabled)
     }
 
     private enum CodingKeys: String, CodingKey {
         case watchface
+        case datafields
+        /// The single datafield saved by older versions; read only.
         case datafield
         case primaryAttributeChoice
         case secondaryAttributeChoice
         case glucoseColorScheme
         case isWatchfaceDataEnabled
+        case isCommandControlEnabled
+        case isBolusCommandEnabled
     }
 }
 

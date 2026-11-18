@@ -62,12 +62,13 @@ struct GarminSettingsView: View {
 
     @State private var confirmingRemoval = false
     @State private var confirmingWatchfaceSwitch = false
+    @State private var confirmingBolusCommands = false
     @State private var editMode: EditMode = .inactive
 
     var body: some View {
         List {
             Section {
-                Text(LocalizedString("Experimental. The chosen Garmin watch apps show glucose, loop status and therapy values. Nothing is sent from the watch.", comment: "Garmin settings: what the plugin does"))
+                Text(LocalizedString("Experimental. The chosen Garmin watch apps show glucose, loop status and therapy values. The watch can send commands only when you turn them on below.", comment: "Garmin settings: what the plugin does"))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -84,6 +85,7 @@ struct GarminSettingsView: View {
 
             devicesSection
             watchAppSection
+            commandsSection
             displaySection
 
             Section {
@@ -168,14 +170,72 @@ struct GarminSettingsView: View {
                 confirmingWatchfaceSwitch = true
             }
             Toggle(LocalizedString("Send to Watchface", comment: "Garmin settings: watchface data toggle"), isOn: $model.settings.isWatchfaceDataEnabled)
-            Picker(LocalizedString("Datafield", comment: "Garmin settings: datafield picker"), selection: $model.settings.datafield) {
-                ForEach(GarminDatafield.allCases) { Text($0.displayName).tag($0) }
+            Text(LocalizedString("Datafields", comment: "Garmin settings: datafield selection heading"))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            ForEach(GarminDatafield.selectableCases) { datafield in
+                Button {
+                    model.settings.toggleDatafield(datafield)
+                } label: {
+                    HStack {
+                        Text(datafield.displayName)
+                            .foregroundStyle(model.settings.canSelectDatafield(datafield) ? Color.primary : Color.secondary)
+                        Spacer()
+                        if model.settings.datafields.contains(datafield) {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(Color.accentColor)
+                        }
+                    }
+                }
+                .buttonStyle(.borderless)
+                .disabled(!model.settings.canSelectDatafield(datafield))
+                .accessibilityAddTraits(model.settings.datafields.contains(datafield) ? .isSelected : [])
             }
         } header: {
             Text(LocalizedString("Watch Apps", comment: "Garmin settings: watch apps section"))
         } footer: {
-            Text(LocalizedString("Turn off Send to Watchface to use only a datafield. Complication is a watch app that puts the values in any watchface's complications.", comment: "Garmin settings: watch apps footer"))
+            Text(LocalizedString("Turn off Send to Watchface to use only datafields. Up to four datafields can receive data at the same time, or choose none. Complication is a watch app that puts the values in any watchface's complications.", comment: "Garmin settings: watch apps footer"))
         }
+    }
+
+    private var commandsSection: some View {
+        Section {
+            Toggle(LocalizedString("Enable Watch Commands", comment: "Garmin settings: commands master toggle"), isOn: $model.settings.isCommandControlEnabled)
+            Toggle(LocalizedString("Allow Bolus Commands", comment: "Garmin settings: bolus commands toggle"), isOn: bolusCommandsBinding)
+                .disabled(!model.settings.isCommandControlEnabled)
+                .confirmationDialog(
+                    LocalizedString("Allow Bolus Commands?", comment: "Garmin settings: confirm bolus commands title"),
+                    isPresented: $confirmingBolusCommands,
+                    titleVisibility: .visible
+                ) {
+                    Button(LocalizedString("Allow Bolus Commands", comment: "Garmin settings: confirm bolus commands button"), role: .destructive) {
+                        model.settings.isBolusCommandEnabled = true
+                    }
+                    Button(LocalizedString("Cancel", comment: "Garmin settings: cancel bolus commands"), role: .cancel) {}
+                } message: {
+                    Text(LocalizedString("The watch will be able to deliver insulin without any confirmation on this phone. Only enable this if you keep your watch locked and under your control.", comment: "Garmin settings: confirm bolus commands message"))
+                }
+        } header: {
+            Text(LocalizedString("Commands", comment: "Garmin settings: commands section"))
+        } footer: {
+            Text(LocalizedString("Commands come from the Complication watch app. Carbs, overrides and temp targets need the first switch; bolus and meal bolus need the second as well. Both are off by default. The phone still applies its own maximum bolus, IOB and carb limits. A watch bolus is refused within 6 minutes of the previous one, and a command older than 2 minutes is refused.", comment: "Garmin settings: commands footer"))
+                + Text("\n\n")
+                + Text(LocalizedString("Only enable this if you keep your watch locked and under your control.", comment: "Garmin settings: commands warning")).bold()
+        }
+    }
+
+    /// Turning bolus commands on asks first; turning them off does not.
+    private var bolusCommandsBinding: Binding<Bool> {
+        Binding(
+            get: { model.settings.isBolusCommandEnabled },
+            set: { newValue in
+                if newValue {
+                    confirmingBolusCommands = true
+                } else {
+                    model.settings.isBolusCommandEnabled = false
+                }
+            }
+        )
     }
 
     private var displaySection: some View {

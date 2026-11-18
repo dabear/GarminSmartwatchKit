@@ -371,7 +371,7 @@ import Testing
         let manager = GarminSmartwatchManager()
         var settings = GarminWatchSettings()
         settings.watchface = .swissalpine
-        settings.datafield = .none
+        settings.datafields = []
         settings.primaryAttributeChoice = .isf
         settings.secondaryAttributeChoice = .eventualBG
         settings.glucoseColorScheme = .dynamicColor
@@ -388,7 +388,7 @@ import Testing
         let saved = Data(#"{"watchface":"swissalpine","datafield":"none","primaryAttributeChoice":"isf","secondaryAttributeChoice":"eventualBG"}"#.utf8)
         let settings = try JSONDecoder().decode(GarminWatchSettings.self, from: saved)
         #expect(settings.watchface == .swissalpine)
-        #expect(settings.datafield == GarminDatafield.none)
+        #expect(settings.datafields.isEmpty)
         #expect(settings.primaryAttributeChoice == .isf)
         #expect(settings.secondaryAttributeChoice == .eventualBG)
         #expect(settings.glucoseColorScheme == .staticColor)
@@ -399,7 +399,7 @@ import Testing
         let saved = Data(#"{"watchface":"retired","datafield":"swissalpine","glucoseColorScheme":"dynamic","isWatchfaceDataEnabled":false}"#.utf8)
         let settings = try JSONDecoder().decode(GarminWatchSettings.self, from: saved)
         #expect(settings.watchface == .trio)
-        #expect(settings.datafield == .swissalpine)
+        #expect(settings.datafields == [.swissalpine])
         #expect(settings.glucoseColorScheme == .dynamicColor)
         #expect(settings.isWatchfaceDataEnabled == false)
     }
