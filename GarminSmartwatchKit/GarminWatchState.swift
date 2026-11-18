@@ -263,9 +263,9 @@ public extension GarminWatchState {
         public var historySpan: TimeInterval
         /// The least time between two readings sent (`GarminWatchface.historySpacing`).
         public var historySpacing: TimeInterval
-        /// Whether to send `predicted`, `predictedMin` and `predictedMax`: only when the
-        /// LoopGraph datafield is selected, as they add to the payload the watch gets.
-        public var sendPredictedGlucose: Bool
+        /// The forecast keys to send (`GarminWatchSettings.forecastFormats`); empty for none.
+        /// Only what the chosen apps read, as every key adds to the payload the watch gets.
+        public var forecastFormats: Set<GarminForecastFormat>
 
         public init(
             primaryAttributeChoice: String,
@@ -273,14 +273,14 @@ public extension GarminWatchState {
             glucoseColorScheme: String,
             historySpan: TimeInterval,
             historySpacing: TimeInterval,
-            sendPredictedGlucose: Bool = false
+            forecastFormats: Set<GarminForecastFormat> = [.cone]
         ) {
             self.primaryAttributeChoice = primaryAttributeChoice
             self.secondaryAttributeChoice = secondaryAttributeChoice
             self.glucoseColorScheme = glucoseColorScheme
             self.historySpan = historySpan
             self.historySpacing = historySpacing
-            self.sendPredictedGlucose = sendPredictedGlucose
+            self.forecastFormats = forecastFormats
         }
     }
 
@@ -325,13 +325,15 @@ public extension GarminWatchState {
         first.displayPrimaryAttributeChoice = options.primaryAttributeChoice
         first.displaySecondaryAttributeChoice = options.secondaryAttributeChoice
         first.glucoseColorScheme = options.glucoseColorScheme
-        let cone = forecastCone(loop.predictedGlucose)
-        if let start = cone.first?.date {
-            first.forecastDate = milliseconds(start)
-            first.forecastLow = cone.map(\.low)
-            first.forecastHigh = cone.map(\.high)
+        if options.forecastFormats.contains(.cone) {
+            let cone = forecastCone(loop.predictedGlucose)
+            if let start = cone.first?.date {
+                first.forecastDate = milliseconds(start)
+                first.forecastLow = cone.map(\.low)
+                first.forecastHigh = cone.map(\.high)
+            }
         }
-        if options.sendPredictedGlucose {
+        if options.forecastFormats.contains(.predictedPairs) {
             let envelope = predictedPairs(loop.predictedGlucose, now: now)
             first.predicted = envelope.line
             first.predictedMin = envelope.min

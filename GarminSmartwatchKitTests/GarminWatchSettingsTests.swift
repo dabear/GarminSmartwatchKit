@@ -313,4 +313,42 @@ import Testing
         #expect(GarminDatafield.none.datafieldUUID == nil)
         #expect(GarminDatafield.loopgraph.datafieldUUID != nil)
     }
+
+    // MARK: - Forecast formats
+
+    @Test("Each watch app declares its forecast format: LoopGraph mountrcg's pairs, the others the cone")
+    func declaredForecastFormats() {
+        #expect(GarminWatchface.allCases.allSatisfy { $0.forecastFormat == .cone })
+        #expect(GarminDatafield.trio.forecastFormat == .cone)
+        #expect(GarminDatafield.swissalpine.forecastFormat == .cone)
+        #expect(GarminDatafield.loopgraph.forecastFormat == .predictedPairs)
+        #expect(GarminDatafield.none.forecastFormat == GarminForecastFormat.none)
+    }
+
+    @Test("The broadcast carries the formats of the chosen apps together")
+    func combinedForecastFormats() {
+        var settings = GarminWatchSettings()
+        settings.watchface = .trio
+        settings.isWatchfaceDataEnabled = true
+        settings.datafields = [.loopgraph]
+        #expect(settings.forecastFormats() == [.cone, .predictedPairs])
+
+        settings.isWatchfaceDataEnabled = false
+        #expect(settings.forecastFormats() == [.predictedPairs], "a watchface that gets no data adds no format")
+
+        settings.datafields = []
+        #expect(settings.forecastFormats().isEmpty)
+
+        settings.datafields = [.trio, .swissalpine]
+        #expect(settings.forecastFormats() == [.cone])
+    }
+
+    @Test("Forecasts off in code: no format for any app")
+    func forecastsOff() {
+        var settings = GarminWatchSettings()
+        settings.datafields = [.loopgraph, .trio]
+        settings.isWatchfaceDataEnabled = true
+        #expect(settings.forecastFormats(isEnabled: false).isEmpty)
+        #expect(GarminForecastFormat.isEnabled, "on in this build")
+    }
 }

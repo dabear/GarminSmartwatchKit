@@ -87,6 +87,13 @@ public enum GarminWatchface: String, CaseIterable, Identifiable, Codable, Hashab
         }
     }
 
+    /// The forecast keys this watch app reads; `.none` sends it none.
+    public var forecastFormat: GarminForecastFormat {
+        switch self {
+        case .trio, .swissalpine, .complication: return .cone
+        }
+    }
+
     /// How far back the readings the watch app gets reach, measured from the newest
     /// reading; 0 sends the newest reading only. Time rather than a count, so it
     /// means the same with any CGM. The plugin reads only
@@ -139,6 +146,15 @@ public enum GarminDatafield: String, CaseIterable, Identifiable, Codable, Hashab
         }
     }
 
+    /// The forecast keys this datafield reads; `.none` sends it none.
+    public var forecastFormat: GarminForecastFormat {
+        switch self {
+        case .trio, .swissalpine: return .cone
+        case .loopgraph: return .predictedPairs
+        case .none: return .none
+        }
+    }
+
     /// How far back from the newest reading this datafield needs; see `GarminWatchface.historySpan`.
     public var historySpan: TimeInterval {
         switch self {
@@ -165,6 +181,25 @@ public enum GarminDatafield: String, CaseIterable, Identifiable, Codable, Hashab
         }
         return selection
     }
+}
+
+// MARK: - Forecast
+
+/// Which forecast keys a watch app reads. Each watch app declares its own
+/// (`GarminWatchface.forecastFormat`, `GarminDatafield.forecastFormat`); the broadcast,
+/// which every chosen app gets, carries the formats of all of them.
+public enum GarminForecastFormat: String, CaseIterable, Hashable, Sendable {
+    /// No forecast keys for this app.
+    case none
+    /// `forecastDate`, `forecastLow`, `forecastHigh`: the plugin's cone, one value per
+    /// 5 minutes for up to 4 hours. The format for new watch apps.
+    case cone
+    /// mountrcg's `predicted`, `predictedMin`, `predictedMax` pairs, 10-minute steps for
+    /// 70 minutes, which LoopGraph was built against.
+    case predictedPairs
+
+    /// Turns forecasts off for every watch app, whatever each declares.
+    public static let isEnabled = true
 }
 
 // MARK: - Command app
@@ -254,6 +289,16 @@ public struct GarminWatchSettings: Codable, Hashable, Sendable {
     /// Whether the datafield is chosen or can still be added.
     public func canSelectDatafield(_ datafield: GarminDatafield) -> Bool {
         datafields.contains(datafield) || datafields.count < GarminDatafield.maxSelectionCount
+    }
+
+    /// The forecast formats the chosen watch apps read: the watchface while it gets data, and
+    /// every datafield. Empty when none reads one or forecasts are off in code.
+    public func forecastFormats(isEnabled: Bool = GarminForecastFormat.isEnabled) -> Set<GarminForecastFormat> {
+        guard isEnabled else { return [] }
+        var formats = Set(datafields.map(\.forecastFormat))
+        if isWatchfaceDataEnabled { formats.insert(watchface.forecastFormat) }
+        formats.remove(.none)
+        return formats
     }
 
     /// The longest history any chosen watch app needs; the broadcast goes to all of them.

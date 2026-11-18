@@ -139,11 +139,35 @@ import Testing
         #expect(json[0]["forecastLow"] == nil && json[0]["forecastHigh"] == nil && json[0]["forecastDate"] == nil)
     }
 
+    // MARK: Forecast formats
+
+    @Test("Forecast keys follow the formats asked for: cone, mountrcg's pairs, both or none",
+          arguments: [Set<GarminForecastFormat>(), [.cone], [.predictedPairs], [.cone, .predictedPairs], [.none]])
+    func forecastFormats(_ formats: Set<GarminForecastFormat>) throws {
+        let curves = [ramp(from: 120, step: 1, count: 16)]
+        var options = options
+        options.forecastFormats = formats
+        let state = first(curves, options: options, at: now.addingTimeInterval(-60))
+
+        let sendsCone = formats.contains(.cone)
+        let sendsPairs = formats.contains(.predictedPairs)
+        #expect((state.forecastDate != nil) == sendsCone)
+        #expect((state.forecastLow != nil) == sendsCone)
+        #expect((state.forecastHigh != nil) == sendsCone)
+        #expect((state.predictedMin != nil) == sendsPairs)
+        #expect((state.predictedMax != nil) == sendsPairs)
+
+        let json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode([state])) as? [[String: Any]])
+        let keys = Set(json[0].keys)
+        #expect(keys.isDisjoint(with: ["forecastDate", "forecastLow", "forecastHigh"]) == !sendsCone)
+        #expect(keys.isDisjoint(with: ["predicted", "predictedMin", "predictedMax"]) == !sendsPairs)
+    }
+
     // MARK: Predicted glucose for LoopGraph (mountrcg's format)
 
     private var withPredicted: GarminWatchState.DisplayOptions {
         var options = options
-        options.sendPredictedGlucose = true
+        options.forecastFormats = [.cone, .predictedPairs]
         return options
     }
 
@@ -170,7 +194,7 @@ import Testing
         let state = first(curves, options: options, at: now.addingTimeInterval(-60))
         #expect(state.predicted == nil && state.predictedMin == nil && state.predictedMax == nil)
         #expect(state.forecastLow != nil, "the cone is sent as before")
-        #expect(!GarminWatchState.DisplayOptions(primaryAttributeChoice: "", secondaryAttributeChoice: "", glucoseColorScheme: "", historySpan: 0, historySpacing: 0).sendPredictedGlucose)
+        #expect(GarminWatchState.DisplayOptions(primaryAttributeChoice: "", secondaryAttributeChoice: "", glucoseColorScheme: "", historySpan: 0, historySpacing: 0).forecastFormats == [.cone])
 
         let json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode([state])) as? [[String: Any]])
         #expect(json[0]["predicted"] == nil && json[0]["predictedMin"] == nil && json[0]["predictedMax"] == nil)
@@ -243,7 +267,7 @@ import Testing
             )
         }]
         var withBoth = withHistory
-        withBoth.sendPredictedGlucose = true
+        withBoth.forecastFormats = [.cone, .predictedPairs]
         let states = GarminWatchState.states(from: host, options: withBoth, now: now.addingTimeInterval(-60))
         #expect(states.count > 1)
         #expect(states[0].predictedMin?.first == [ms(0), 121], "6.7 mmol/L is 120.7 mg/dL")
