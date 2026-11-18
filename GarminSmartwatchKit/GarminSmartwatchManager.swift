@@ -270,7 +270,9 @@ public final class GarminSmartwatchManager: NSObject {
             secondaryAttributeChoice: settings.secondaryAttributeChoice.rawValue,
             glucoseColorScheme: settings.glucoseColorScheme.rawValue,
             historySpan: settings.historySpan,
-            historySpacing: settings.watchface.historySpacing
+            historySpacing: settings.watchface.historySpacing,
+            // mountrcg's predicted-glucose keys, read by the LoopGraph datafield only.
+            sendPredictedGlucose: settings.datafields.contains(.loopgraph)
         )
         return try? JSONEncoder().encode(GarminWatchState.states(from: host, options: options))
     }

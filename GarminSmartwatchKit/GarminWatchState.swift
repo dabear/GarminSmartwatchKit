@@ -83,6 +83,19 @@ public struct GarminWatchState: Hashable, Equatable, Sendable, Encodable {
     /// The forecast cone's upper edge in raw mg/dL, as `forecastLow`.
     var forecastHigh: [Int16]?
 
+    /// The predicted glucose line as `[milliseconds since epoch, mg/dL]` pairs, ascending
+    /// in time (only in the first array entry). This format is mountrcg's (Trio branch
+    /// feat/garmin-predicted-glucose), made for the LoopGraph datafield. Sent only
+    /// for a single forecast curve (Loop); with several curves only the envelope below
+    /// is sent, as mountrcg's Trio branch does. See `predictedPairs`.
+    var predicted: [[UInt64]]?
+
+    /// The predicted envelope's lower and upper bounds in the same pair format: the
+    /// per-time-step minimum and maximum across the forecast curves. Equal to `predicted`
+    /// for one curve.
+    var predictedMin: [[UInt64]]?
+    var predictedMax: [[UInt64]]?
+
     public static func == (lhs: GarminWatchState, rhs: GarminWatchState) -> Bool {
         lhs.date == rhs.date &&
             lhs.glucoseDate == rhs.glucoseDate &&
@@ -103,7 +116,10 @@ public struct GarminWatchState: Hashable, Equatable, Sendable, Encodable {
             lhs.targetGlucose == rhs.targetGlucose &&
             lhs.forecastDate == rhs.forecastDate &&
             lhs.forecastLow == rhs.forecastLow &&
-            lhs.forecastHigh == rhs.forecastHigh
+            lhs.forecastHigh == rhs.forecastHigh &&
+            lhs.predicted == rhs.predicted &&
+            lhs.predictedMin == rhs.predictedMin &&
+            lhs.predictedMax == rhs.predictedMax
     }
 
     public func hash(into hasher: inout Hasher) {
@@ -127,6 +143,9 @@ public struct GarminWatchState: Hashable, Equatable, Sendable, Encodable {
         hasher.combine(forecastDate)
         hasher.combine(forecastLow)
         hasher.combine(forecastHigh)
+        hasher.combine(predicted)
+        hasher.combine(predictedMin)
+        hasher.combine(predictedMax)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -150,6 +169,9 @@ public struct GarminWatchState: Hashable, Equatable, Sendable, Encodable {
         case forecastDate
         case forecastLow
         case forecastHigh
+        case predicted
+        case predictedMin
+        case predictedMax
     }
 
     /// Custom encoding that excludes nil values from the JSON output
@@ -177,6 +199,9 @@ public struct GarminWatchState: Hashable, Equatable, Sendable, Encodable {
         try container.encodeIfPresent(forecastDate, forKey: .forecastDate)
         try container.encodeIfPresent(forecastLow, forKey: .forecastLow)
         try container.encodeIfPresent(forecastHigh, forKey: .forecastHigh)
+        try container.encodeIfPresent(predicted, forKey: .predicted)
+        try container.encodeIfPresent(predictedMin, forKey: .predictedMin)
+        try container.encodeIfPresent(predictedMax, forKey: .predictedMax)
     }
 
     private static func twoPlaces(_ value: Double) -> Double {
@@ -238,19 +263,24 @@ public extension GarminWatchState {
         public var historySpan: TimeInterval
         /// The least time between two readings sent (`GarminWatchface.historySpacing`).
         public var historySpacing: TimeInterval
+        /// Whether to send `predicted`, `predictedMin` and `predictedMax`: only when the
+        /// LoopGraph datafield is selected, as they add to the payload the watch gets.
+        public var sendPredictedGlucose: Bool
 
         public init(
             primaryAttributeChoice: String,
             secondaryAttributeChoice: String,
             glucoseColorScheme: String,
             historySpan: TimeInterval,
-            historySpacing: TimeInterval
+            historySpacing: TimeInterval,
+            sendPredictedGlucose: Bool = false
         ) {
             self.primaryAttributeChoice = primaryAttributeChoice
             self.secondaryAttributeChoice = secondaryAttributeChoice
             self.glucoseColorScheme = glucoseColorScheme
             self.historySpan = historySpan
             self.historySpacing = historySpacing
+            self.sendPredictedGlucose = sendPredictedGlucose
         }
     }
 
@@ -300,6 +330,12 @@ public extension GarminWatchState {
             first.forecastDate = milliseconds(start)
             first.forecastLow = cone.map(\.low)
             first.forecastHigh = cone.map(\.high)
+        }
+        if options.sendPredictedGlucose {
+            let envelope = predictedPairs(loop.predictedGlucose, now: now)
+            first.predicted = envelope.line
+            first.predictedMin = envelope.min
+            first.predictedMax = envelope.max
         }
 
         return [first] + history(after: readings, options: options).map { reading in
@@ -387,6 +423,51 @@ public extension GarminWatchState {
             guard let low = values.min().flatMap(mgdL), let high = values.max().flatMap(mgdL) else { return nil }
             return (date: curves[0][index].startDate, low: low, high: high)
         }
+    }
+
+    /// The highest forecast index sent as a predicted pair: mountrcg's rule is an even index
+    /// of 15 or less, so every 10 minutes for 70 minutes (indexes 0, 2, ... 14).
+    private static let predictedIndexLimit = 15
+
+    /// The predicted glucose in the format of mountrcg's Trio branch (commit 6e7457637,
+    /// `GarminManager`), which the LoopGraph datafield reads. `[milliseconds since epoch,
+    /// mg/dL]` pairs, ascending in time, whole mg/dL.
+    ///
+    /// As there: a curve's values are 5 minutes apart from the first one's time (oref's
+    /// determination time; for Loop the first value is the newest reading's), and only an
+    /// even index of at most 15 with a value above 0 is kept (10-minute steps, up to 70
+    /// minutes). A time step's bounds are the lowest and highest of the curves that have
+    /// it, and a pair at or before `now` is left out. Nothing is returned, no keys sent,
+    /// if no pair is left.
+    ///
+    /// `line` is the pairs of a single curve (Loop) and nil with several, as in Trio's
+    /// branch, which sends only the envelope. One curve gives `min` and `max` equal to it.
+    static func predictedPairs(
+        _ curves: [[PredictedGlucoseValue]],
+        now: Date
+    ) -> (line: [[UInt64]]?, min: [[UInt64]]?, max: [[UInt64]]?) {
+        let curves = curves.filter { !$0.isEmpty }
+        guard let anchor = curves.first?.first?.startDate else { return (nil, nil, nil) }
+        var minByIndex: [Int: Int16] = [:]
+        var maxByIndex: [Int: Int16] = [:]
+        for curve in curves {
+            for index in curve.indices where index.isMultiple(of: 2) && index <= predictedIndexLimit {
+                guard let value = mgdL(mgdLValue(curve[index].quantity)), value > 0 else { continue }
+                minByIndex[index] = Swift.min(minByIndex[index] ?? value, value)
+                maxByIndex[index] = Swift.max(maxByIndex[index] ?? value, value)
+            }
+        }
+        var lows: [[UInt64]] = []
+        var highs: [[UInt64]] = []
+        for index in minByIndex.keys.sorted() {
+            let date = anchor.addingTimeInterval(TimeInterval(index * 300))
+            guard date > now, let low = minByIndex[index], let high = maxByIndex[index] else { continue }
+            let time = milliseconds(date)
+            lows.append([time, UInt64(low)])
+            highs.append([time, UInt64(high)])
+        }
+        guard !lows.isEmpty else { return (nil, nil, nil) }
+        return (curves.count == 1 ? lows : nil, lows, highs)
     }
 
     /// The debug log lines for the forecast, in whole mg/dL: each curve, then the
