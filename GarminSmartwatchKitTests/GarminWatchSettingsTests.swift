@@ -368,4 +368,25 @@ import Testing
         #expect(settings.forecastFormats(isEnabled: false).isEmpty)
         #expect(GarminForecastFormat.isEnabled, "on in this build")
     }
+
+    @Test("Bolus can't be on while commands are off, in either order")
+    func bolusNeedsCommands() {
+        var settings = GarminWatchSettings()
+        settings.isBolusCommandEnabled = true
+        #expect(settings.isBolusCommandEnabled == false)
+        settings.isCommandControlEnabled = true
+        settings.isBolusCommandEnabled = true
+        #expect(settings.isBolusCommandEnabled)
+    }
+
+    @Test("A watchface that gets no data adds no history")
+    func historyIgnoresWatchfaceWithoutData() {
+        var settings = GarminWatchSettings()
+        settings.watchface = .swissalpine
+        settings.datafields = [.trio]
+        settings.isWatchfaceDataEnabled = true
+        #expect(settings.historySpan == GarminWatchface.swissalpine.historySpan)
+        settings.isWatchfaceDataEnabled = false
+        #expect(settings.historySpan == 0)
+    }
 }

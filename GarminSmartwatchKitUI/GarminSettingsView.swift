@@ -164,14 +164,8 @@ struct GarminSettingsView: View {
 
     private var watchAppSection: some View {
         Section {
-            Picker(LocalizedString("Watchface", comment: "Garmin settings: watchface picker"), selection: $model.settings.watchface) {
+            Picker(LocalizedString("Watchface", comment: "Garmin settings: watchface picker"), selection: watchfaceBinding) {
                 ForEach(GarminWatchface.allCases) { Text($0.displayName).tag($0) }
-            }
-            .onChange(of: model.settings.watchface) { oldValue, newValue in
-                // Already off on purpose: leave it off and don't ask.
-                guard oldValue != newValue, model.settings.isWatchfaceDataEnabled else { return }
-                model.settings.isWatchfaceDataEnabled = false
-                confirmingWatchfaceSwitch = true
             }
             Toggle(LocalizedString("Send to Watchface", comment: "Garmin settings: watchface data toggle"), isOn: $model.settings.isWatchfaceDataEnabled)
             Text(LocalizedString("Datafields", comment: "Garmin settings: datafield selection heading"))
@@ -227,6 +221,23 @@ struct GarminSettingsView: View {
                 + Text(verbatim: "\n\n")
                 + Text(LocalizedString("Only enable this if you keep your watch locked and under your control.", comment: "Garmin settings: commands warning")).bold()
         }
+    }
+
+    /// A new watchface and the pause of sending to it are one settings change, so the command
+    /// app isn't switched twice. Already off on purpose: it stays off and nothing is asked.
+    private var watchfaceBinding: Binding<GarminWatchface> {
+        Binding(
+            get: { model.settings.watchface },
+            set: { newValue in
+                guard newValue != model.settings.watchface else { return }
+                var settings = model.settings
+                settings.watchface = newValue
+                let asks = settings.isWatchfaceDataEnabled
+                settings.isWatchfaceDataEnabled = false
+                model.settings = settings
+                if asks { confirmingWatchfaceSwitch = true }
+            }
+        )
     }
 
     /// Turning bolus commands on asks first; turning them off does not.

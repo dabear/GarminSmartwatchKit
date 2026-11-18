@@ -234,7 +234,8 @@ public enum GarminDatafield: String, CaseIterable, Identifiable, Codable, Hashab
     }
 
     /// Every chosen datafield is registered as its own Connect IQ app and gets
-    /// the same broadcast, so this caps how many apps one update goes to.
+    /// the same broadcast (LoopGraph under two app IDs), so this caps the datafields one update
+    /// goes to. Above the three that can be chosen, so it limits nothing yet.
     public static let maxSelectionCount = 4
 
     /// Drops `.none` and duplicates and keeps at most `maxSelectionCount`, in order.
@@ -339,7 +340,12 @@ public struct GarminWatchSettings: Codable, Hashable, Sendable {
         }
     }
     /// Also lets them send bolus and meal bolus commands; only while `isCommandControlEnabled` is on.
-    public var isBolusCommandEnabled: Bool = false
+    public var isBolusCommandEnabled: Bool = false {
+        didSet {
+            // Never on while commands are off, whatever order the switches are set in.
+            if isBolusCommandEnabled, !isCommandControlEnabled { isBolusCommandEnabled = false }
+        }
+    }
     /// On by default, as Trio's home stats panel shows time in range by default.
     public var isTimeInRangeEnabled: Bool = true
     /// Today by default, as Trio's home stats panel.
@@ -375,7 +381,8 @@ public struct GarminWatchSettings: Codable, Hashable, Sendable {
     /// The longest history any chosen watch app needs; the broadcast goes to all of them.
     public var historySpan: TimeInterval {
         let datafieldSpan = datafields.map(\.historySpan).max() ?? 0
-        return max(watchface.historySpan, datafieldSpan)
+        // The watchface counts only while it gets data, as for the forecast formats.
+        return max(isWatchfaceDataEnabled ? watchface.historySpan : 0, datafieldSpan)
     }
 
     /// Each setting missing from what was saved (one added since) or no longer
