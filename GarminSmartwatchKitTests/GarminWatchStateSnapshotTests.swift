@@ -221,6 +221,13 @@ import Testing
         #expect(pairs.dropFirst().map { $0[0] } == (1 ..< 8).map { ms(Double($0) * 10) })
     }
 
+    @Test("COB is sent rounded to 2 decimal places") func cobRounded() throws {
+        var state = GarminWatchState()
+        state.cob = 23.4567891
+        let json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any])
+        #expect(json["cob"] as? Double == 23.46)
+    }
+
     @Test("Sampling is mountrcg's: even indexes up to 15 (10-minute steps, 70 minutes), anchored at the first value") func predictedSampling() {
         let state = first([ramp(from: 100, step: 1, count: 40)], options: withPredicted, at: now.addingTimeInterval(-60))
         let pairs = state.predictedMin ?? []

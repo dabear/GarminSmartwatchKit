@@ -188,7 +188,7 @@ public struct GarminWatchState: Hashable, Equatable, Sendable, Encodable {
         // Round Double values to 2 decimal places to prevent floating point artifacts like "0.5600000000000001"
         try container.encodeIfPresent(iob.map(Self.twoPlaces), forKey: .iob)
         try container.encodeIfPresent(tbr.map(Self.twoPlaces), forKey: .tbr)
-        try container.encodeIfPresent(cob, forKey: .cob)
+        try container.encodeIfPresent(cob.map(Self.twoPlaces), forKey: .cob)
         try container.encodeIfPresent(eventualBG, forKey: .eventualBG)
         try container.encodeIfPresent(isf, forKey: .isf)
         try container.encodeIfPresent(sensRatio.map(Self.twoPlaces), forKey: .sensRatio)
