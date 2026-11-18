@@ -87,6 +87,7 @@ struct GarminSettingsView: View {
             watchAppSection
             commandsSection
             displaySection
+            timeInRangeSection
 
             Section {
                 Button(LocalizedString("Delete Garmin", comment: "Garmin settings: remove the plugin"), role: .destructive) {
@@ -257,6 +258,28 @@ struct GarminSettingsView: View {
             Text(LocalizedString("Display", comment: "Garmin settings: display section"))
         } footer: {
             Text(LocalizedString("What the Trio and SwissAlpine watch apps show next to glucose. Sens Ratio is shown with Trio only; TBR is the temp basal rate, evBG the eventual glucose.", comment: "Garmin settings: display footer"))
+        }
+    }
+
+    /// Its own section: one feature, its settings and its own note. Period and Range
+    /// show only while it's on.
+    private var timeInRangeSection: some View {
+        Section {
+            Toggle(LocalizedString("Show on Watch", comment: "Garmin settings: time in range on or off"), isOn: $model.settings.isTimeInRangeEnabled)
+            if model.settings.isTimeInRangeEnabled {
+                Picker(LocalizedString("Period", comment: "Garmin settings: time in range period"), selection: $model.settings.timeInRangePeriod) {
+                    ForEach(GarminTimeInRangePeriod.allCases) { Text($0.displayName).tag($0) }
+                }
+                Picker(LocalizedString("Range", comment: "Garmin settings: time in range bounds"), selection: $model.settings.timeInRangeTarget) {
+                    ForEach(GarminTimeInRangeTarget.allCases) {
+                        Text($0.displayName(isMillimolesPerLiter: model.manager.isMillimolesPerLiterHost)).tag($0)
+                    }
+                }
+            }
+        } header: {
+            Text(LocalizedString("Time in Range", comment: "Garmin settings: time in range section"))
+        } footer: {
+            Text(LocalizedString("For watch apps that show it: the share of glucose readings below, in and above the range.", comment: "Garmin settings: time in range footer"))
         }
     }
 }
