@@ -28,7 +28,5 @@
 	<string>Garmin</string>
 	<key>com.loopkit.Loop.PluginSubtitle</key>
 	<string>Connect IQ watchfaces, watch apps and datafields</string>
-	<key>com.loopkit.Loop.PluginComingSoon</key>
-	<true/>
 </dict>
 </plist>
