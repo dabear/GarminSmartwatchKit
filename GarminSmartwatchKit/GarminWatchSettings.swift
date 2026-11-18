@@ -58,6 +58,62 @@ public enum GarminGlucoseColorScheme: String, CaseIterable, Identifiable, Codabl
     }
 }
 
+/// Which readings the watch's time in range counts.
+public enum GarminTimeInRangePeriod: String, CaseIterable, Identifiable, Codable, Hashable, Sendable {
+    public var id: String { rawValue }
+
+    /// Since midnight in the phone's time zone.
+    case today
+    case past24Hours
+
+    public var displayName: String {
+        switch self {
+        case .past24Hours: return LocalizedString("Past 24 Hours", comment: "Garmin time in range: the past 24 hours")
+        case .today: return LocalizedString("Today", comment: "Garmin time in range: since midnight")
+        }
+    }
+
+    /// The oldest reading counted.
+    public func start(now: Date, calendar: Calendar = .current) -> Date {
+        switch self {
+        case .past24Hours: return now.addingTimeInterval(-24 * 60 * 60)
+        case .today: return calendar.startOfDay(for: now)
+        }
+    }
+}
+
+/// The glucose range the watch's time in range counts as in range, as Trio's home
+/// stats panel: a lower limit of 70 (Standard) or 63 (Extended) mg/dL, Trio's
+/// `TimeInRangeType.bottomThreshold`, up to a fixed 180.
+public enum GarminTimeInRangeTarget: String, CaseIterable, Identifiable, Codable, Hashable, Sendable {
+    public var id: String { rawValue }
+
+    case standard
+    case extended
+
+    /// In mg/dL, both ends in range.
+    public var bounds: ClosedRange<Double> {
+        switch self {
+        case .standard: return 70 ... 180
+        case .extended: return 63 ... 180
+        }
+    }
+
+    /// "Standard (70–180 mg/dL)", or with "3.9–10.0 mmol/L" for a host that shows mmol/L.
+    public func displayName(isMillimolesPerLiter: Bool) -> String {
+        if isMillimolesPerLiter {
+            switch self {
+            case .standard: return LocalizedString("Standard (3.9–10.0 mmol/L)", comment: "Garmin time in range: 70–180 mg/dL in mmol/L")
+            case .extended: return LocalizedString("Extended (3.5–10.0 mmol/L)", comment: "Garmin time in range: 63–180 mg/dL in mmol/L")
+            }
+        }
+        switch self {
+        case .standard: return LocalizedString("Standard (70–180 mg/dL)", comment: "Garmin time in range: Trio's standard lower limit")
+        case .extended: return LocalizedString("Extended (63–180 mg/dL)", comment: "Garmin time in range: Trio's extended lower limit")
+        }
+    }
+}
+
 // MARK: - Watch apps
 
 /// The Connect IQ watch apps that take the watchface slot.
@@ -89,9 +145,9 @@ public enum GarminWatchface: String, CaseIterable, Identifiable, Codable, Hashab
 
     /// How far back the readings the watch app gets reach, measured from the newest
     /// reading; 0 sends the newest reading only. Time rather than a count, so it
-    /// means the same with any CGM. The plugin reads only
-    /// `GarminHostData.historyInterval` (3 h) from the host, so a longer span gets
-    /// no more than that.
+    /// means the same with any CGM. The plugin sends readings from only the last
+    /// `GarminHostData.historyInterval` (3 h), so a longer span gets no more than
+    /// that.
     public var historySpan: TimeInterval {
         switch self {
         case .trio: return 0
@@ -146,6 +202,11 @@ public struct GarminWatchSettings: Codable, Hashable, Sendable {
     public var glucoseColorScheme: GarminGlucoseColorScheme = .staticColor
     /// Off while the user switches watchfaces on the watch, or uses only a datafield.
     public var isWatchfaceDataEnabled: Bool = true
+    /// On by default, as Trio's home stats panel shows time in range by default.
+    public var isTimeInRangeEnabled: Bool = true
+    /// Today by default, as Trio's home stats panel.
+    public var timeInRangePeriod: GarminTimeInRangePeriod = .today
+    public var timeInRangeTarget: GarminTimeInRangeTarget = .standard
 
     public init() {}
 
@@ -164,6 +225,9 @@ public struct GarminWatchSettings: Codable, Hashable, Sendable {
         secondaryAttributeChoice = value(.secondaryAttributeChoice, or: defaults.secondaryAttributeChoice)
         glucoseColorScheme = value(.glucoseColorScheme, or: defaults.glucoseColorScheme)
         isWatchfaceDataEnabled = value(.isWatchfaceDataEnabled, or: defaults.isWatchfaceDataEnabled)
+        isTimeInRangeEnabled = value(.isTimeInRangeEnabled, or: defaults.isTimeInRangeEnabled)
+        timeInRangePeriod = value(.timeInRangePeriod, or: defaults.timeInRangePeriod)
+        timeInRangeTarget = value(.timeInRangeTarget, or: defaults.timeInRangeTarget)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -173,6 +237,9 @@ public struct GarminWatchSettings: Codable, Hashable, Sendable {
         case secondaryAttributeChoice
         case glucoseColorScheme
         case isWatchfaceDataEnabled
+        case isTimeInRangeEnabled
+        case timeInRangePeriod
+        case timeInRangeTarget
     }
 }
 
