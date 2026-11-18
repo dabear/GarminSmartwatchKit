@@ -348,8 +348,10 @@ public struct GarminWatchSettings: Codable, Hashable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(watchface, forKey: .watchface)
         try container.encode(datafields, forKey: .datafields)
-        // For a downgrade: the previous version reads only this key and otherwise falls back to Trio.
-        try container.encode(datafields.first ?? .none, forKey: .datafield)
+        // For a downgrade: the previous version reads only this key, knows only Trio and
+        // SwissAlpine, and falls back to Trio for anything else, LoopGraph included.
+        let legacy = datafields.first { $0 == .trio || $0 == .swissalpine } ?? .none
+        try container.encode(legacy, forKey: .datafield)
         try container.encode(primaryAttributeChoice, forKey: .primaryAttributeChoice)
         try container.encode(secondaryAttributeChoice, forKey: .secondaryAttributeChoice)
         try container.encode(glucoseColorScheme, forKey: .glucoseColorScheme)

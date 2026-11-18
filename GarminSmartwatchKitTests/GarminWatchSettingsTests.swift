@@ -127,7 +127,7 @@ import Testing
         #expect(decoded.datafields.isEmpty)
     }
 
-    @Test("Encoding writes the datafields key and, for older versions, the first choice under the old single key")
+    @Test("Encoding writes the datafields key and, for older versions, the first known choice under the old single key")
     func encodesDatafieldsKey() throws {
         var settings = GarminWatchSettings()
         settings.datafields = [.loopgraph, .swissalpine]
@@ -135,7 +135,7 @@ import Testing
         let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
 
         #expect(object["datafields"] as? [String] == ["loopgraph", "swissalpine"])
-        #expect(object["datafield"] as? String == "loopgraph")
+        #expect(object["datafield"] as? String == "swissalpine", "the first choice the previous version knows")
     }
 
     @Test("An empty selection is written as none under the old single key, so an older version shows no datafield")
@@ -147,6 +147,15 @@ import Testing
 
         #expect(object["datafields"] as? [String] == [])
         #expect(object["datafield"] as? String == "none")
+    }
+
+    @Test("The legacy key never names LoopGraph, which the previous version doesn't know",
+          arguments: [([GarminDatafield.loopgraph], "none"), ([.loopgraph, .swissalpine], "swissalpine"), ([.trio, .loopgraph], "trio")])
+    func legacyKeySkipsLoopGraph(datafields: [GarminDatafield], expected: String) throws {
+        var settings = GarminWatchSettings()
+        settings.datafields = datafields
+        let json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as? [String: Any])
+        #expect(json["datafield"] as? String == expected)
     }
 
     @Test("Decoding what this version wrote still takes the full selection, not the legacy key")
