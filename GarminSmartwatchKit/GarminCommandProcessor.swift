@@ -388,7 +388,7 @@ actor GarminCommandInsulinLane {
         grant: UInt64
     ) async -> GarminWatchCommandResult {
         if let message = await mealBolusRejectionBeforeCarbs(request: request, grant: grant) {
-            return .failure(message)
+            return .failure(GarminCommandMessage.beforeCarbs(message))
         }
 
         switch await addCarbs(grams, request: request, grant: grant) {
@@ -403,8 +403,12 @@ actor GarminCommandInsulinLane {
         switch await deliverBolus(units, request: request, grant: grant) {
         case .delivered:
             return .success(.genericSuccess, GarminCommandMessage.mealBolusStarted)
-        case .rejected:
-            return GarminWatchCommandResult(acknowledged: false, ackCode: .partialFailure, message: GarminCommandMessage.mealBolusRejected)
+        case let .rejected(reason):
+            return GarminWatchCommandResult(
+                acknowledged: false,
+                ackCode: .partialFailure,
+                message: GarminCommandMessage.afterCarbs(reason)
+            )
         case .failed:
             return GarminWatchCommandResult(acknowledged: false, ackCode: .partialFailure, message: GarminCommandMessage.mealBolusFailed)
         }
@@ -658,7 +662,8 @@ actor GarminCommandInsulinLane {
         case .noRecentGlucose:
             return GarminCommandMessage.noRecentGlucose
         case .rateLimited:
-            return action == .bolus ? GarminCommandMessage.recentBolus : GarminCommandMessage.rateLimited
+            // The host's own rule, not the watch hold, so not the hold's text.
+            return GarminCommandMessage.rateLimited
         case .dailyLimitReached:
             return GarminCommandMessage.dailyLimitReached
         case .unknownPreset:
@@ -721,51 +726,87 @@ private extension SmartwatchActionError {
 
 /// User-facing acks; Tai's wording where it had one.
 private enum GarminCommandMessage {
+    // Shown on a small watch screen. Never amounts. Every refused insulin command says that no
+    // bolus was delivered; a meal bolus also says whether its carbs were logged.
+
+    private static var holdMinutes: Int { Int(GarminCommandProcessor.minimumBolusInterval / 60) }
+    private static var glucoseMinutes: Int { Int(GarminCommandProcessor.maximumGlucoseAge / 60) }
+
     static var interrupted: String {
-        LocalizedString("Interrupted by an app restart. Check carbs and pump history before repeating.", comment: "Garmin watch command ack")
+        LocalizedString("The app restarted while this request was running. Check carbs and pump history before repeating.", comment: "Garmin watch ack: a bolus or meal bolus may have run before the app restarted")
     }
-    static var inProgress: String { LocalizedString("Request is already in progress.", comment: "Garmin watch command ack") }
-    static var requestIDReused: String { LocalizedString("Request ID was already used.", comment: "Garmin watch command ack") }
-    static var tooManyRequests: String { LocalizedString("Too many requests in progress. Please try again.", comment: "Garmin watch command ack") }
-    static var expired: String { LocalizedString("Command expired. Please try again.", comment: "Garmin watch command ack") }
-    static var settingsChanged: String { LocalizedString("Watch command settings changed.", comment: "Garmin watch command ack") }
-    static var commandsDisabled: String { LocalizedString("Watch commands are disabled.", comment: "Garmin watch command ack") }
-    static var bolusDisabled: String { LocalizedString("Bolus from watch is disabled.", comment: "Garmin watch command ack") }
-    static var notCommandApp: String { LocalizedString("Commands are handled by another watch app.", comment: "Garmin watch command ack") }
-    static var notAllowed: String { LocalizedString("Not allowed from the watch.", comment: "Garmin watch command ack") }
+    static var inProgress: String { LocalizedString("Request is already in progress.", comment: "Garmin watch ack: duplicate of a running request") }
+    static var requestIDReused: String { LocalizedString("This request was already used. Nothing was done.", comment: "Garmin watch ack: request ID reused for another command") }
+    static var tooManyRequests: String { LocalizedString("Too many requests in progress. Try again.", comment: "Garmin watch ack: request cache full") }
+    static var expired: String { LocalizedString("Command expired. Nothing was done. Try again.", comment: "Garmin watch ack: command too old or dated ahead") }
+    static var settingsChanged: String { LocalizedString("Command settings changed on the phone. Nothing was done.", comment: "Garmin watch ack: a command switch changed while the command waited") }
+    static var commandsDisabled: String { LocalizedString("Watch commands are off. Turn them on in the Garmin settings on the phone.", comment: "Garmin watch ack: commands switch off") }
+    static var bolusDisabled: String { LocalizedString("Boluses from the watch are off. Turn them on in the Garmin settings on the phone.", comment: "Garmin watch ack: bolus switch off") }
+    static var notCommandApp: String { LocalizedString("Commands are handled by another watch app.", comment: "Garmin watch ack: sent by an app that isn't the command app") }
+    static var notAllowed: String { LocalizedString("Not allowed from the watch. Nothing was done.", comment: "Garmin watch ack: the host refused the action") }
 
-    static var invalidBolus: String { LocalizedString("Invalid bolus amount.", comment: "Garmin watch command ack") }
-    static var invalidCarbs: String { LocalizedString("Invalid carbs amount.", comment: "Garmin watch command ack") }
-    static var carbsAboveMaximum: String { LocalizedString("Carbs exceed the maximum allowed.", comment: "Garmin watch command ack") }
-    static var bolusAboveMaximum: String { LocalizedString("Bolus exceeds max bolus.", comment: "Garmin watch command ack") }
-    static var bolusAboveRecommendation: String { LocalizedString("Bolus exceeds the recommendation.", comment: "Garmin watch command ack") }
-    static var noRecentGlucose: String { LocalizedString("No recent glucose reading.", comment: "Garmin watch command ack") }
-    static var recentBolus: String { LocalizedString("A bolus was given in the last 6 minutes.", comment: "Garmin watch command ack") }
-    static var rateLimited: String { LocalizedString("Too soon after the previous request.", comment: "Garmin watch command ack") }
-    static var dailyLimitReached: String { LocalizedString("Daily watch bolus limit reached.", comment: "Garmin watch command ack") }
-    static var bolusInProgress: String { LocalizedString("Another bolus is in progress.", comment: "Garmin watch command ack") }
+    static var invalidBolus: String { LocalizedString("Invalid bolus amount. No bolus was delivered.", comment: "Garmin watch ack: bolus amount not positive") }
+    static var invalidCarbs: String { LocalizedString("Invalid carbs amount. Nothing was logged.", comment: "Garmin watch ack: carbs amount not positive") }
+    static var carbsAboveMaximum: String { LocalizedString("Carbs are above the maximum carb entry. Nothing was logged.", comment: "Garmin watch ack: carbs over the host's maximum") }
+    static var bolusAboveMaximum: String { LocalizedString("Bolus is above the maximum bolus. No bolus was delivered.", comment: "Garmin watch ack: bolus over the host's maximum bolus") }
+    static var bolusAboveRecommendation: String { LocalizedString("Bolus is more than recommended now. No bolus was delivered.", comment: "Garmin watch ack: host refused a bolus above its recommendation") }
+    static var noRecentGlucose: String {
+        String(format: LocalizedString("No glucose reading in the last %d minutes. No bolus was delivered.", comment: "Garmin watch ack: no recent glucose; %d is minutes"), glucoseMinutes)
+    }
+    static var recentBolus: String {
+        String(format: LocalizedString("Too soon after the previous watch bolus. Check pump history and wait %d minutes. No bolus was delivered.", comment: "Garmin watch ack: watch bolus hold; %d is minutes"), holdMinutes)
+    }
+    static var rateLimited: String { LocalizedString("Too soon after the previous bolus. No bolus was delivered.", comment: "Garmin watch ack: host refused, too soon after a bolus") }
+    static var dailyLimitReached: String { LocalizedString("Daily watch bolus limit reached. No bolus was delivered.", comment: "Garmin watch ack: host's daily limit") }
+    static var bolusInProgress: String { LocalizedString("Another bolus is in progress. No bolus was delivered.", comment: "Garmin watch ack: another bolus is being delivered") }
 
-    static var carbsLogged: String { LocalizedString("Carbs logged.", comment: "Garmin watch command ack") }
-    static var carbsFailed: String { LocalizedString("Could not log carbs.", comment: "Garmin watch command ack") }
-    static var bolusStarted: String { LocalizedString("Bolus started.", comment: "Garmin watch command ack") }
-    static var bolusRefused: String { LocalizedString("Bolus refused. No bolus was delivered.", comment: "Garmin watch command ack") }
-    static var bolusFailed: String { LocalizedString("Bolus failed. Check pump history before repeating.", comment: "Garmin watch command ack") }
-    static var mealCarbsFailed: String { LocalizedString("Could not log carbs. No bolus was delivered.", comment: "Garmin watch command ack") }
-    static var mealBolusStarted: String { LocalizedString("Carbs logged and bolus started.", comment: "Garmin watch command ack") }
-    static var mealBolusRejected: String { LocalizedString("Carbs logged. No bolus was delivered.", comment: "Garmin watch command ack") }
+    static var carbsLogged: String { LocalizedString("Carbs logged.", comment: "Garmin watch ack: carbs added") }
+    static var carbsFailed: String { LocalizedString("Couldn't log carbs.", comment: "Garmin watch ack: carb entry failed") }
+    static var bolusStarted: String { LocalizedString("Bolus started.", comment: "Garmin watch ack: pump accepted the bolus") }
+    static var bolusRefused: String { LocalizedString("Bolus refused. No bolus was delivered.", comment: "Garmin watch ack: host refused the bolus") }
+    static var bolusFailed: String { LocalizedString("Bolus failed. Check pump history before repeating.", comment: "Garmin watch ack: pump error, delivery uncertain") }
+    static var mealCarbsFailed: String { LocalizedString("Couldn't log carbs. No bolus was delivered.", comment: "Garmin watch ack: meal bolus, carb entry failed") }
+    static var mealBolusStarted: String { LocalizedString("Carbs logged and bolus started.", comment: "Garmin watch ack: meal bolus done") }
+    static var mealBolusRejected: String { LocalizedString("Carbs logged. Bolus refused. No bolus was delivered.", comment: "Garmin watch ack: meal bolus, carbs added, bolus refused") }
     static var mealBolusFailed: String {
-        LocalizedString("Carbs logged. Bolus failed, check pump history before repeating.", comment: "Garmin watch command ack")
+        LocalizedString("Carbs logged. Bolus failed. Check pump history before repeating.", comment: "Garmin watch ack: meal bolus, carbs added, pump error")
     }
 
-    static var overrideNotFound: String { LocalizedString("Override preset not found.", comment: "Garmin watch command ack") }
-    static var overrideStarted: String { LocalizedString("Override started.", comment: "Garmin watch command ack") }
-    static var overrideStopped: String { LocalizedString("Override stopped.", comment: "Garmin watch command ack") }
-    static var overrideStartFailed: String { LocalizedString("Could not start override.", comment: "Garmin watch command ack") }
-    static var overrideStopFailed: String { LocalizedString("Could not stop override.", comment: "Garmin watch command ack") }
-    static var tempTargetsUnavailable: String { LocalizedString("Temp targets aren't available.", comment: "Garmin watch command ack") }
-    static var tempTargetNotFound: String { LocalizedString("Temp target preset not found.", comment: "Garmin watch command ack") }
-    static var tempTargetStarted: String { LocalizedString("Temp target started.", comment: "Garmin watch command ack") }
-    static var tempTargetStopped: String { LocalizedString("Temp target stopped.", comment: "Garmin watch command ack") }
-    static var tempTargetStartFailed: String { LocalizedString("Could not start temp target.", comment: "Garmin watch command ack") }
-    static var tempTargetStopFailed: String { LocalizedString("Could not stop temp target.", comment: "Garmin watch command ack") }
+    /// A meal bolus refused before its carbs were added: nothing was logged.
+    static func beforeCarbs(_ reason: String) -> String {
+        switch reason {
+        case noRecentGlucose:
+            return String(format: LocalizedString("No glucose reading in the last %d minutes. No carbs or bolus were logged.", comment: "Garmin watch ack: meal bolus refused before carbs, no recent glucose; %d is minutes"), glucoseMinutes)
+        case recentBolus:
+            return String(format: LocalizedString("Too soon after the previous watch bolus. Check pump history and wait %d minutes. No carbs or bolus were logged.", comment: "Garmin watch ack: meal bolus refused before carbs, watch bolus hold; %d is minutes"), holdMinutes)
+        default:
+            return reason
+        }
+    }
+
+    /// A meal bolus whose carbs were added and whose bolus was then refused, with the reason.
+    static func afterCarbs(_ reason: String) -> String {
+        switch reason {
+        case noRecentGlucose:
+            return String(format: LocalizedString("Carbs logged. No glucose reading in the last %d minutes. No bolus was delivered.", comment: "Garmin watch ack: meal bolus, carbs added, no recent glucose; %d is minutes"), glucoseMinutes)
+        case recentBolus:
+            return LocalizedString("Carbs logged. Too soon after the previous watch bolus. No bolus was delivered.", comment: "Garmin watch ack: meal bolus, carbs added, watch bolus hold")
+        case bolusAboveMaximum:
+            return LocalizedString("Carbs logged. Bolus is above the maximum bolus. No bolus was delivered.", comment: "Garmin watch ack: meal bolus, carbs added, over max bolus")
+        default:
+            return mealBolusRejected
+        }
+    }
+
+    static var overrideNotFound: String { LocalizedString("Override preset not found.", comment: "Garmin watch ack: no unique override preset with that name") }
+    static var overrideStarted: String { LocalizedString("Override started.", comment: "Garmin watch ack: override started") }
+    static var overrideStopped: String { LocalizedString("Override stopped.", comment: "Garmin watch ack: override stopped") }
+    static var overrideStartFailed: String { LocalizedString("Couldn't start override.", comment: "Garmin watch ack: override start failed") }
+    static var overrideStopFailed: String { LocalizedString("Couldn't stop override.", comment: "Garmin watch ack: override stop failed") }
+    static var tempTargetsUnavailable: String { LocalizedString("This app has no temp targets.", comment: "Garmin watch ack: host without temp targets (Loop)") }
+    static var tempTargetNotFound: String { LocalizedString("Temp target preset not found.", comment: "Garmin watch ack: no unique temp target preset with that name") }
+    static var tempTargetStarted: String { LocalizedString("Temp target started.", comment: "Garmin watch ack: temp target started") }
+    static var tempTargetStopped: String { LocalizedString("Temp target stopped.", comment: "Garmin watch ack: temp target stopped") }
+    static var tempTargetStartFailed: String { LocalizedString("Couldn't start temp target.", comment: "Garmin watch ack: temp target start failed") }
+    static var tempTargetStopFailed: String { LocalizedString("Couldn't stop temp target.", comment: "Garmin watch ack: temp target stop failed") }
 }

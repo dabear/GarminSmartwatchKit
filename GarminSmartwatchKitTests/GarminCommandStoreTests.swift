@@ -55,7 +55,7 @@ import Testing
             let store = GarminCommandDefaultsStore(defaults: defaults)
             var request = stored(.bolus(1), at: start)
             store.saveInsulinRequest(request)
-            request.result = .init(.failure("No recent glucose reading."))
+            request.result = .init(.failure("No glucose reading in the last 15 minutes. No bolus was delivered."))
             store.saveInsulinRequest(request)
 
             #expect(GarminCommandDefaultsStore(defaults: defaults).insulinRequests == [request])
@@ -162,7 +162,10 @@ import Testing
             clock.advance(by: GarminCommandProcessor.minimumBolusInterval - 1)
             let relaunched = GarminProcessorRig(store: GarminCommandDefaultsStore(defaults: defaults, now: { clock.now }), clock: clock, host: rig.host)
             let command: GarminWatchCommand = isMeal ? .mealBolus(carbs: 30, bolus: 1) : .bolus(1)
-            #expect(await relaunched.processor.process(relaunched.request(command)) == .failure("A bolus was given in the last 6 minutes."))
+            let expected = isMeal
+                ? "Too soon after the previous watch bolus. Check pump history and wait 6 minutes. No carbs or bolus were logged."
+                : "Too soon after the previous watch bolus. Check pump history and wait 6 minutes. No bolus was delivered."
+            #expect(await relaunched.processor.process(relaunched.request(command)) == .failure(expected))
             #expect(rig.host.calls.count == 1, "No carbs, no second bolus")
 
             clock.advance(by: 1)
@@ -220,8 +223,8 @@ import Testing
             let clock = GarminTestClock(start)
             let rig = GarminProcessorRig(store: GarminCommandDefaultsStore(defaults: defaults, now: { clock.now }), clock: clock)
 
-            #expect(await rig.processor.process(rig.request(.bolus(1))) == .failure("A bolus was given in the last 6 minutes."))
-            #expect(await rig.processor.process(rig.request(.mealBolus(carbs: 30, bolus: 1))) == .failure("A bolus was given in the last 6 minutes."))
+            #expect(await rig.processor.process(rig.request(.bolus(1))) == .failure("Too soon after the previous watch bolus. Check pump history and wait 6 minutes. No bolus was delivered."))
+            #expect(await rig.processor.process(rig.request(.mealBolus(carbs: 30, bolus: 1))) == .failure("Too soon after the previous watch bolus. Check pump history and wait 6 minutes. No carbs or bolus were logged."))
             #expect(rig.host.calls.isEmpty)
             #expect(await rig.processor.process(rig.request(.carbs(10))).acknowledged, "Carbs alone aren't held")
 

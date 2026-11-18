@@ -215,13 +215,13 @@ private final class LogCapture {
     @Test("The processor's failure is relayed as a failed ack")
     func failureAck() async {
         let processor = SpyProcessor()
-        processor.result = .failure("Watch commands are disabled.")
+        processor.result = .failure("Watch commands are off. Turn them on in the Garmin settings on the phone.")
 
         let outcome = await route(envelope(command: "carbs", payload: ["carbs": 10]), via: processor)
 
         #expect(outcome.reply?["acknowledged"] as? Bool == false)
         #expect(outcome.reply?["ackCode"] as? String == "failure")
-        #expect(outcome.reply?["message"] as? String == "Watch commands are disabled.")
+        #expect(outcome.reply?["message"] as? String == "Watch commands are off. Turn them on in the Garmin settings on the phone.")
         #expect(outcome.pushesPresets == false)
     }
 

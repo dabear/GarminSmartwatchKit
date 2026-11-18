@@ -105,7 +105,7 @@ import Testing
         #expect(result.acknowledged == accepted)
         #expect(host.calls.count == (accepted ? 1 : 0))
         if !accepted {
-            #expect(result.message == "Command expired. Please try again.")
+            #expect(result.message == "Command expired. Nothing was done. Try again.")
         }
     }
 
@@ -121,7 +121,7 @@ import Testing
         ]
         for command in commands {
             let result = await processor.process(request(command))
-            #expect(result == .failure("Watch commands are disabled."))
+            #expect(result == .failure("Watch commands are off. Turn them on in the Garmin settings on the phone."))
         }
         #expect(host.calls.isEmpty)
     }
@@ -129,8 +129,8 @@ import Testing
     @Test("Bolus switch off rejects bolus and meal bolus but not carbs") func bolusSwitchOff() async {
         changeSettings { $0.isBolusCommandEnabled = false }
 
-        #expect(await processor.process(request(.bolus(1))) == .failure("Bolus from watch is disabled."))
-        #expect(await processor.process(request(.mealBolus(carbs: 10, bolus: 1))) == .failure("Bolus from watch is disabled."))
+        #expect(await processor.process(request(.bolus(1))) == .failure("Boluses from the watch are off. Turn them on in the Garmin settings on the phone."))
+        #expect(await processor.process(request(.mealBolus(carbs: 10, bolus: 1))) == .failure("Boluses from the watch are off. Turn them on in the Garmin settings on the phone."))
         #expect(await processor.process(request(.carbs(10))).acknowledged)
         #expect(host.calls.count == 1)
     }
@@ -255,11 +255,11 @@ import Testing
         #expect(
             await processor.process(request(.bolus(1), app: complicationUUID)) == .failure("Commands are handled by another watch app.")
         )
-        #expect(await processor.process(request(.bolus(1))) == .failure("Bolus from watch is disabled."))
+        #expect(await processor.process(request(.bolus(1))) == .failure("Boluses from the watch are off. Turn them on in the Garmin settings on the phone."))
 
         changeSettings { $0.isCommandControlEnabled = false }
-        #expect(await processor.process(request(.carbs(10), app: complicationUUID)) == .failure("Watch commands are disabled."))
-        #expect(await processor.process(request(.carbs(10))) == .failure("Watch commands are disabled."))
+        #expect(await processor.process(request(.carbs(10), app: complicationUUID)) == .failure("Watch commands are off. Turn them on in the Garmin settings on the phone."))
+        #expect(await processor.process(request(.carbs(10))) == .failure("Watch commands are off. Turn them on in the Garmin settings on the phone."))
         #expect(host.calls.isEmpty)
     }
 
@@ -269,7 +269,7 @@ import Testing
             $0.isCommandControlEnabled = false
         }
 
-        #expect(await processor.process(request(.carbs(10), app: complicationUUID)) == .failure("Watch commands are disabled."))
+        #expect(await processor.process(request(.carbs(10), app: complicationUUID)) == .failure("Watch commands are off. Turn them on in the Garmin settings on the phone."))
         #expect(host.calls.isEmpty)
     }
 
@@ -302,8 +302,8 @@ import Testing
     @Test("Carbs above the host's maximum are rejected; exactly the maximum is allowed") func maxCarbs() async {
         host.maxCarbs = 50
 
-        #expect(await processor.process(request(.carbs(51))) == .failure("Carbs exceed the maximum allowed."))
-        #expect(await processor.process(request(.mealBolus(carbs: 51, bolus: 1))) == .failure("Carbs exceed the maximum allowed."))
+        #expect(await processor.process(request(.carbs(51))) == .failure("Carbs are above the maximum carb entry. Nothing was logged."))
+        #expect(await processor.process(request(.mealBolus(carbs: 51, bolus: 1))) == .failure("Carbs are above the maximum carb entry. Nothing was logged."))
         #expect(host.calls.isEmpty)
         #expect(await processor.process(request(.carbs(50))).acknowledged)
     }
@@ -329,10 +329,10 @@ import Testing
 
     @Test("Host carb errors map to safe messages") func carbsErrors() async {
         host.carbsError = SmartwatchActionError.exceedsMaximum
-        #expect(await processor.process(request(.carbs(10))) == .failure("Carbs exceed the maximum allowed."))
+        #expect(await processor.process(request(.carbs(10))) == .failure("Carbs are above the maximum carb entry. Nothing was logged."))
 
         host.carbsError = SmartwatchActionError.failed("secret 42 g")
-        #expect(await processor.process(request(.carbs(10))) == .failure("Could not log carbs."))
+        #expect(await processor.process(request(.carbs(10))) == .failure("Couldn't log carbs."))
     }
 
     // MARK: - Bolus
@@ -365,9 +365,9 @@ import Testing
 
     @Test("Host bolus refusals keep their meaning") func bolusErrorMessages() async {
         host.bolusErrors = [SmartwatchActionError.exceedsMaximum]
-        #expect(await processor.process(request(.bolus(30))).message == "Bolus exceeds max bolus.")
+        #expect(await processor.process(request(.bolus(30))).message == "Bolus is above the maximum bolus. No bolus was delivered.")
         host.bolusErrors = [SmartwatchActionError.inProgress]
-        #expect(await processor.process(request(.bolus(1))).message == "Another bolus is in progress.")
+        #expect(await processor.process(request(.bolus(1))).message == "Another bolus is in progress. No bolus was delivered.")
         host.bolusErrors = [SmartwatchActionError.refusedByHost("max IOB 5 U")]
         #expect(await processor.process(request(.bolus(1))).message == "Bolus refused. No bolus was delivered.")
     }
@@ -383,7 +383,7 @@ import Testing
         #expect(failed == .failure("Bolus failed. Check pump history before repeating."))
 
         let held = await processor.process(request(.bolus(1)))
-        #expect(held == .failure("A bolus was given in the last 6 minutes."))
+        #expect(held == .failure("Too soon after the previous watch bolus. Check pump history and wait 6 minutes. No bolus was delivered."))
         #expect(host.bolusCalls == [2])
     }
 
@@ -392,7 +392,7 @@ import Testing
 
         clock.advance(by: GarminCommandProcessor.minimumBolusInterval - 1)
         #expect(await processor.process(request(.bolus(1))).acknowledged == false)
-        #expect(await processor.process(request(.mealBolus(carbs: 20, bolus: 1))) == .failure("A bolus was given in the last 6 minutes."))
+        #expect(await processor.process(request(.mealBolus(carbs: 20, bolus: 1))) == .failure("Too soon after the previous watch bolus. Check pump history and wait 6 minutes. No carbs or bolus were logged."))
         #expect(host.carbCalls.isEmpty, "The hold is checked before the carbs")
         #expect(logs.lines.contains { $0.contains("previous watch bolus may not be in pump history yet") })
 
@@ -416,7 +416,7 @@ import Testing
         let result = await processor.process(request(.mealBolus(carbs: 40, bolus: 30)))
 
         #expect(result == GarminWatchCommandResult(
-            acknowledged: false, ackCode: .partialFailure, message: "Carbs logged. No bolus was delivered."
+            acknowledged: false, ackCode: .partialFailure, message: "Carbs logged. Bolus is above the maximum bolus. No bolus was delivered."
         ))
     }
 
@@ -426,7 +426,7 @@ import Testing
 
         #expect(result == GarminWatchCommandResult(
             acknowledged: false, ackCode: .partialFailure,
-            message: "Carbs logged. Bolus failed, check pump history before repeating."
+            message: "Carbs logged. Bolus failed. Check pump history before repeating."
         ))
     }
 
@@ -434,7 +434,7 @@ import Testing
         host.carbsError = SmartwatchActionError.failed("x")
         let result = await processor.process(request(.mealBolus(carbs: 40, bolus: 3)))
 
-        #expect(result == .failure("Could not log carbs. No bolus was delivered."))
+        #expect(result == .failure("Couldn't log carbs. No bolus was delivered."))
         #expect(host.bolusCalls.isEmpty)
     }
 
@@ -444,7 +444,7 @@ import Testing
 
         let meal = request(.mealBolus(carbs: 40, bolus: 3))
         let refused = await processor.process(meal)
-        #expect(refused == .failure("A bolus was given in the last 6 minutes."), "Nothing logged, so no partial failure")
+        #expect(refused == .failure("Too soon after the previous watch bolus. Check pump history and wait 6 minutes. No carbs or bolus were logged."), "Nothing logged, so no partial failure")
         #expect(await processor.process(meal) == refused)
         #expect(await processor.process(request(.mealBolus(carbs: 40, bolus: 3))) == refused)
         #expect(host.carbCalls.isEmpty)
@@ -457,7 +457,7 @@ import Testing
 
         let result = await processor.process(request(.mealBolus(carbs: 40, bolus: 3)))
 
-        #expect(result == .failure("No recent glucose reading."))
+        #expect(result == .failure("No glucose reading in the last 15 minutes. No carbs or bolus were logged."))
         #expect(host.calls.isEmpty)
     }
 
@@ -510,7 +510,7 @@ import Testing
         _ = await processor.process(request(.carbs(10), id: id))
         let result = await processor.process(request(.carbs(20), id: id))
 
-        #expect(result == .failure("Request ID was already used."))
+        #expect(result == .failure("This request was already used. Nothing was done."))
         #expect(host.calls.count == 1)
     }
 
@@ -560,8 +560,8 @@ import Testing
     @Test("Temp target commands fail when the host has no temp targets") func noTempTargets() async {
         host.tempTargets = nil
 
-        #expect(await processor.process(request(.activateTempTarget(name: "Walk"))) == .failure("Temp targets aren't available."))
-        #expect(await processor.process(request(.cancelTempTarget)) == .failure("Temp targets aren't available."))
+        #expect(await processor.process(request(.activateTempTarget(name: "Walk"))) == .failure("This app has no temp targets."))
+        #expect(await processor.process(request(.cancelTempTarget)) == .failure("This app has no temp targets."))
         #expect(host.calls.isEmpty)
     }
 
@@ -571,11 +571,11 @@ import Testing
         #expect(await processor.process(request(.activateOverride(name: "Sport"))) == .failure("Override preset not found."))
 
         host.overrideError = SmartwatchActionError.failed("secret")
-        #expect(await processor.process(request(.activateOverride(name: "Sport"))) == .failure("Could not start override."))
-        #expect(await processor.process(request(.cancelOverride)) == .failure("Could not stop override."))
+        #expect(await processor.process(request(.activateOverride(name: "Sport"))) == .failure("Couldn't start override."))
+        #expect(await processor.process(request(.cancelOverride)) == .failure("Couldn't stop override."))
 
         host.tempTargetError = SmartwatchActionError.refusedByHost("secret")
-        #expect(await processor.process(request(.cancelTempTarget)) == .failure("Could not stop temp target."))
+        #expect(await processor.process(request(.cancelTempTarget)) == .failure("Couldn't stop temp target."))
     }
 
     @Test("Presets are sorted by name and report which one runs") func presetsSorted() async {
@@ -668,7 +668,7 @@ import Testing
         host.maxCarbsGate?.open()
         let result = await pending.value
 
-        #expect(result == .failure("Watch command settings changed."), "Nothing was logged, so this is no partial failure")
+        #expect(result == .failure("Command settings changed on the phone. Nothing was done."), "Nothing was logged, so this is no partial failure")
         #expect(host.calls.isEmpty)
     }
 
@@ -685,7 +685,7 @@ import Testing
         changeSettings { $0.watchface = to }
         host.maxCarbsGate?.open()
 
-        #expect(await pending.value == .failure("Watch command settings changed."))
+        #expect(await pending.value == .failure("Command settings changed on the phone. Nothing was done."))
         #expect(host.calls.isEmpty)
     }
 
@@ -710,7 +710,7 @@ import Testing
         changeSettings { $0.watchface = .trio }
         host.maxCarbsGate?.open()
 
-        #expect(await pending.value == .failure("Watch command settings changed."))
+        #expect(await pending.value == .failure("Command settings changed on the phone. Nothing was done."))
         #expect(host.calls.isEmpty)
     }
 
@@ -726,7 +726,7 @@ import Testing
         host.bolusGate?.open()
         #expect(await first.value.acknowledged == false)
 
-        #expect(await second.value == .failure("Watch command settings changed."))
+        #expect(await second.value == .failure("Command settings changed on the phone. Nothing was done."))
         #expect(host.bolusCalls == [2])
         #expect(
             await processor.process(request(.bolus(1))) == .failure("Commands are handled by another watch app."),
@@ -763,7 +763,7 @@ import Testing
         toggleOffAndOn(bolusSwitch: false)
         host.presetsGate?.open()
 
-        #expect(await pending.value == .failure("Watch command settings changed."))
+        #expect(await pending.value == .failure("Command settings changed on the phone. Nothing was done."))
         #expect(host.calls.isEmpty)
     }
 
@@ -783,7 +783,7 @@ import Testing
         host.bolusGate?.open()
         #expect(await first.value.acknowledged == false)
 
-        #expect(await second.value == .failure("Watch command settings changed."))
+        #expect(await second.value == .failure("Command settings changed on the phone. Nothing was done."))
         #expect(host.bolusCalls == [2])
         #expect(await processor.process(request(.bolus(1))).acknowledged, "New commands run under the new settings")
     }
@@ -824,7 +824,7 @@ import Testing
 
         host.bolusGate?.open()
         #expect(await first.value.acknowledged)
-        #expect(await second.value == .failure("A bolus was given in the last 6 minutes."))
+        #expect(await second.value == .failure("Too soon after the previous watch bolus. Check pump history and wait 6 minutes. No bolus was delivered."))
         #expect(host.bolusCalls == [2])
     }
 

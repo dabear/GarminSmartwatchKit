@@ -37,7 +37,7 @@ import Testing
         #expect(result.acknowledged == accepted)
         #expect(host.bolusCalls == (accepted ? [1] : []))
         if !accepted {
-            #expect(result == .failure("No recent glucose reading."))
+            #expect(result == .failure("No glucose reading in the last 15 minutes. No bolus was delivered."))
         }
     }
 
@@ -46,7 +46,13 @@ import Testing
     ]) func noGlucose(command: GarminWatchCommand) async {
         host.glucoseAge = nil
 
-        #expect(await process(command) == .failure("No recent glucose reading."))
+        let expected: String
+        if case .mealBolus = command {
+            expected = "No glucose reading in the last 15 minutes. No carbs or bolus were logged."
+        } else {
+            expected = "No glucose reading in the last 15 minutes. No bolus was delivered."
+        }
+        #expect(await process(command) == .failure(expected))
         #expect(host.calls.isEmpty)
         #expect(rig.logs.lines.contains { $0.contains("no glucose reading in the last 15 minutes") })
     }
@@ -63,7 +69,7 @@ import Testing
         host.glucoseAge = nil
         host.bolusGate?.open()
         #expect(await first.value.acknowledged == false)
-        #expect(await second.value == .failure("No recent glucose reading."))
+        #expect(await second.value == .failure("No glucose reading in the last 15 minutes. No bolus was delivered."))
         #expect(host.bolusCalls == [2])
     }
 
@@ -71,7 +77,7 @@ import Testing
         #expect(await process(.bolus(1)).acknowledged)
         let reads = host.glucoseReads
 
-        #expect(await process(.bolus(1)) == .failure("A bolus was given in the last 6 minutes."))
+        #expect(await process(.bolus(1)) == .failure("Too soon after the previous watch bolus. Check pump history and wait 6 minutes. No bolus was delivered."))
         #expect(host.glucoseReads == reads)
     }
 
