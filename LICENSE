@@ -3,6 +3,7 @@ MIT License
 Copyright (c) 2021 Ivan Valkou
 Copyright (c) 2025-2026 Trio contributors (GarminManager, GarminWatchState, GarminWatchSettings)
 Copyright (c) 2026 LoopKit Authors (SmartwatchManager plugin)
+Copyright (c) 2026 Tai contributors (Garmin watch commands, multiple datafields)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

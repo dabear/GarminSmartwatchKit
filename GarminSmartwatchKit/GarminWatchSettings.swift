@@ -143,6 +143,14 @@ public enum GarminWatchface: String, CaseIterable, Identifiable, Codable, Hashab
         }
     }
 
+    /// The forecast keys this watch app reads; `.none` sends it none.
+    public var forecastFormat: GarminForecastFormat {
+        switch self {
+        // Built against upstream Trio, which never sent a forecast: none until one reads it.
+        case .trio, .swissalpine, .complication: return .none
+        }
+    }
+
     /// How far back the readings the watch app gets reach, measured from the newest
     /// reading; 0 sends the newest reading only. Time rather than a count, so it
     /// means the same with any CGM. The plugin sends readings from only the last
@@ -171,24 +179,139 @@ public enum GarminDatafield: String, CaseIterable, Identifiable, Codable, Hashab
 
     case trio
     case swissalpine
+    case loopgraph
+    /// Read from settings saved before several datafields could be chosen; never offered.
     case none
 
     public var displayName: String {
         switch self {
         case .trio: return LocalizedString("Trio", comment: "Garmin datafield: Trio")
         case .swissalpine: return LocalizedString("Swissalpine", comment: "Garmin datafield: SwissAlpine")
+        case .loopgraph: return LocalizedString("LoopGraph", comment: "Garmin datafield: LoopGraph")
         case .none: return LocalizedString("None", comment: "Garmin datafield: none")
         }
     }
 
-    /// The Connect IQ store apps (live builds).
-    public var datafieldUUID: UUID? {
+    /// The Connect IQ store apps (live builds), except LoopGraph's; see `datafieldUUIDs`.
+    public var datafieldUUID: UUID? { datafieldUUIDs.first }
+
+    /// Every app ID this datafield may run under. LoopGraph isn't on the Connect IQ store: the
+    /// public source (elnjensen/LoopGraphDatafield, sideloaded) uses 2e18aaa2…, Tai a beta build
+    /// 986105b6…. Both are registered; the one not installed is marked absent.
+    public var datafieldUUIDs: [UUID] {
+        let ids: [String]
         switch self {
-        case .trio: return UUID(uuidString: "3d9b6528-8c84-459a-bbab-989b5f001ebd")
-        case .swissalpine: return UUID(uuidString: "dec5292a-74b0-41bc-8e45-cd93f1d5e137")
+        case .trio: ids = ["3d9b6528-8c84-459a-bbab-989b5f001ebd"]
+        case .swissalpine: ids = ["dec5292a-74b0-41bc-8e45-cd93f1d5e137"]
+        case .loopgraph: ids = ["2e18aaa2-2b57-47d3-8ace-f9cd27c0d765", "986105b6-5d20-4895-a5c1-b98248ddde4c"]
+        case .none: ids = []
+        }
+        return ids.compactMap(UUID.init(uuidString:))
+    }
+
+    /// The forecast keys this datafield reads; `.none` sends it none.
+    public var forecastFormat: GarminForecastFormat {
+        switch self {
+        // The Trio datafield reads only the first entry's values; SwissAlpine was built
+        // against upstream Trio, which never sent a forecast.
+        case .trio, .swissalpine: return .none
+        case .loopgraph: return .predictedPairs
+        case .none: return .none
+        }
+    }
+
+    /// How far back from the newest reading this datafield needs; see `GarminWatchface.historySpan`.
+    public var historySpan: TimeInterval {
+        switch self {
+        case .loopgraph: return 2 * 60 * 60
+        case .trio, .swissalpine, .none: return 0
+        }
+    }
+
+    /// The datafields the user can choose.
+    public static var selectableCases: [GarminDatafield] {
+        allCases.filter { $0 != .none }
+    }
+
+    /// Every chosen datafield is registered as its own Connect IQ app and gets
+    /// the same broadcast (LoopGraph under two app IDs), so this caps the datafields one update
+    /// goes to. Above the three that can be chosen, so it limits nothing yet.
+    public static let maxSelectionCount = 4
+
+    /// Drops `.none` and duplicates and keeps at most `maxSelectionCount`, in order.
+    public static func sanitizedSelection(_ datafields: [GarminDatafield]) -> [GarminDatafield] {
+        var selection = [GarminDatafield]()
+        for datafield in datafields where datafield != .none && !selection.contains(datafield) {
+            selection.append(datafield)
+            if selection.count == maxSelectionCount { break }
+        }
+        return selection
+    }
+}
+
+// MARK: - Forecast
+
+/// Which forecast keys a watch app reads. Each watch app declares its own
+/// (`GarminWatchface.forecastFormat`, `GarminDatafield.forecastFormat`); the broadcast,
+/// which every chosen app gets, carries the formats of all of them.
+public enum GarminForecastFormat: String, CaseIterable, Hashable, Sendable {
+    /// No forecast keys for this app.
+    case none
+    /// `forecastDate`, `forecastLow`, `forecastHigh`: the plugin's cone, one value per
+    /// 5 minutes for up to 4 hours. The format for new watch apps.
+    case cone
+    /// mountrcg's `predicted`, `predictedMin`, `predictedMax` pairs, 10-minute steps for
+    /// 70 minutes, which LoopGraph was built against.
+    case predictedPairs
+
+    /// Set to `false` to send no forecast to any watch app, whatever each declares.
+    public static let isEnabled = true
+}
+
+// MARK: - Command app
+
+/// Connect IQ watch app that sends commands next to a Trio or SwissAlpine watchface.
+public enum GarminWatchControls {
+    public static let displayName = "Trio-WatchControls"
+    public static let appUUID = UUID(uuidString: "d504737e-8315-48d4-b07e-4c421ffb6f54")
+}
+
+/// The one watch app allowed to send commands; with both command apps installed, both would
+/// otherwise prompt. Raw values are the `owner` the watch reads from the command app notice.
+/// From mountrcg's Garmin command-app series (MIT).
+public enum GarminCommandApp: String, Sendable {
+    case complication
+    case watchControls
+    case none
+
+    /// The watchface choice decides, since Complication then runs in the watchface slot; only
+    /// while it gets data, as it isn't registered otherwise.
+    public init(_ settings: GarminWatchSettings) {
+        if settings.watchface == .complication, settings.isWatchfaceDataEnabled {
+            self = .complication
+        } else {
+            self = settings.isCommandControlEnabled ? .watchControls : .none
+        }
+    }
+
+    public var appUUID: UUID? {
+        switch self {
+        case .complication: return GarminWatchface.complication.watchfaceUUID
+        case .watchControls: return GarminWatchControls.appUUID
         case .none: return nil
         }
     }
+
+    public var displayName: String {
+        switch self {
+        case .complication: return GarminWatchface.complication.displayName
+        case .watchControls: return GarminWatchControls.displayName
+        case .none: return LocalizedString("None", comment: "Garmin command app: none")
+        }
+    }
+
+    /// Both command apps, whichever is current.
+    public static let appUUIDs = Set([GarminWatchface.complication.watchfaceUUID, GarminWatchControls.appUUID].compactMap { $0 })
 }
 
 // MARK: - Settings
@@ -196,12 +319,33 @@ public enum GarminDatafield: String, CaseIterable, Identifiable, Codable, Hashab
 /// The plugin's settings, saved in its `rawState`.
 public struct GarminWatchSettings: Codable, Hashable, Sendable {
     public var watchface: GarminWatchface = .trio
-    public var datafield: GarminDatafield = .trio
+    /// The datafields that get data, in the order chosen; empty for none.
+    /// Never more than `GarminDatafield.maxSelectionCount`.
+    public var datafields: [GarminDatafield] = [.trio] {
+        didSet {
+            let sanitized = GarminDatafield.sanitizedSelection(datafields)
+            if sanitized != datafields { datafields = sanitized }
+        }
+    }
     public var primaryAttributeChoice: GarminPrimaryAttributeChoice = .cob
     public var secondaryAttributeChoice: GarminSecondaryAttributeChoice = .tbr
     public var glucoseColorScheme: GarminGlucoseColorScheme = .staticColor
     /// Off while the user switches watchfaces on the watch, or uses only a datafield.
     public var isWatchfaceDataEnabled: Bool = true
+    /// Lets watch apps send carbs, override and temp target commands. Off until the user turns it on.
+    public var isCommandControlEnabled: Bool = false {
+        didSet {
+            // Turning commands back on never re-arms insulin by itself.
+            if !isCommandControlEnabled { isBolusCommandEnabled = false }
+        }
+    }
+    /// Also lets them send bolus and meal bolus commands; only while `isCommandControlEnabled` is on.
+    public var isBolusCommandEnabled: Bool = false {
+        didSet {
+            // Never on while commands are off, whatever order the switches are set in.
+            if isBolusCommandEnabled, !isCommandControlEnabled { isBolusCommandEnabled = false }
+        }
+    }
     /// On by default, as Trio's home stats panel shows time in range by default.
     public var isTimeInRangeEnabled: Bool = true
     /// Today by default, as Trio's home stats panel.
@@ -209,6 +353,37 @@ public struct GarminWatchSettings: Codable, Hashable, Sendable {
     public var timeInRangeTarget: GarminTimeInRangeTarget = .standard
 
     public init() {}
+
+    /// Adds the datafield, or removes it when chosen already; an addition beyond the maximum is ignored.
+    public mutating func toggleDatafield(_ datafield: GarminDatafield) {
+        if let index = datafields.firstIndex(of: datafield) {
+            datafields.remove(at: index)
+        } else if datafield != .none, datafields.count < GarminDatafield.maxSelectionCount {
+            datafields.append(datafield)
+        }
+    }
+
+    /// Whether the datafield is chosen or can still be added.
+    public func canSelectDatafield(_ datafield: GarminDatafield) -> Bool {
+        datafields.contains(datafield) || datafields.count < GarminDatafield.maxSelectionCount
+    }
+
+    /// The forecast formats the chosen watch apps read: the watchface while it gets data, and
+    /// every datafield. Empty when none reads one or forecasts are off in code.
+    public func forecastFormats(isEnabled: Bool = GarminForecastFormat.isEnabled) -> Set<GarminForecastFormat> {
+        guard isEnabled else { return [] }
+        var formats = Set(datafields.map(\.forecastFormat))
+        if isWatchfaceDataEnabled { formats.insert(watchface.forecastFormat) }
+        formats.remove(.none)
+        return formats
+    }
+
+    /// The longest history any chosen watch app needs; the broadcast goes to all of them.
+    public var historySpan: TimeInterval {
+        let datafieldSpan = datafields.map(\.historySpan).max() ?? 0
+        // The watchface counts only while it gets data, as for the forecast formats.
+        return max(isWatchfaceDataEnabled ? watchface.historySpan : 0, datafieldSpan)
+    }
 
     /// Each setting missing from what was saved (one added since) or no longer
     /// known (a choice removed since) takes its default, rather than all of them
@@ -220,23 +395,57 @@ public struct GarminWatchSettings: Codable, Hashable, Sendable {
         }
         let defaults = GarminWatchSettings()
         watchface = value(.watchface, or: defaults.watchface)
-        datafield = value(.datafield, or: defaults.datafield)
+        if let saved = (try? container.decodeIfPresent([GarminDatafield].self, forKey: .datafields)) ?? nil {
+            datafields = GarminDatafield.sanitizedSelection(saved)
+        } else if let single = (try? container.decodeIfPresent(GarminDatafield.self, forKey: .datafield)) ?? nil {
+            // Saved before several datafields could be chosen.
+            datafields = single == .none ? [] : [single]
+        } else {
+            datafields = defaults.datafields
+        }
         primaryAttributeChoice = value(.primaryAttributeChoice, or: defaults.primaryAttributeChoice)
         secondaryAttributeChoice = value(.secondaryAttributeChoice, or: defaults.secondaryAttributeChoice)
         glucoseColorScheme = value(.glucoseColorScheme, or: defaults.glucoseColorScheme)
         isWatchfaceDataEnabled = value(.isWatchfaceDataEnabled, or: defaults.isWatchfaceDataEnabled)
+        // Missing (saved by an older version) or unreadable: commands stay off.
+        isCommandControlEnabled = value(.isCommandControlEnabled, or: false)
+        isBolusCommandEnabled = isCommandControlEnabled && value(.isBolusCommandEnabled, or: false)
         isTimeInRangeEnabled = value(.isTimeInRangeEnabled, or: defaults.isTimeInRangeEnabled)
         timeInRangePeriod = value(.timeInRangePeriod, or: defaults.timeInRangePeriod)
         timeInRangeTarget = value(.timeInRangeTarget, or: defaults.timeInRangeTarget)
     }
 
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(watchface, forKey: .watchface)
+        try container.encode(datafields, forKey: .datafields)
+        // For a downgrade: the previous version reads only this key, knows only Trio and
+        // SwissAlpine, and falls back to Trio for anything else, LoopGraph included.
+        let legacy = datafields.first { $0 == .trio || $0 == .swissalpine } ?? .none
+        try container.encode(legacy, forKey: .datafield)
+        try container.encode(primaryAttributeChoice, forKey: .primaryAttributeChoice)
+        try container.encode(secondaryAttributeChoice, forKey: .secondaryAttributeChoice)
+        try container.encode(glucoseColorScheme, forKey: .glucoseColorScheme)
+        try container.encode(isWatchfaceDataEnabled, forKey: .isWatchfaceDataEnabled)
+        try container.encode(isCommandControlEnabled, forKey: .isCommandControlEnabled)
+        try container.encode(isBolusCommandEnabled, forKey: .isBolusCommandEnabled)
+        try container.encode(isTimeInRangeEnabled, forKey: .isTimeInRangeEnabled)
+        try container.encode(timeInRangePeriod, forKey: .timeInRangePeriod)
+        try container.encode(timeInRangeTarget, forKey: .timeInRangeTarget)
+    }
+
     private enum CodingKeys: String, CodingKey {
         case watchface
+        case datafields
+        /// The single datafield older versions read and save; read only when `datafields` is missing,
+        /// and written as the first choice (or `none`) so an older version still finds it.
         case datafield
         case primaryAttributeChoice
         case secondaryAttributeChoice
         case glucoseColorScheme
         case isWatchfaceDataEnabled
+        case isCommandControlEnabled
+        case isBolusCommandEnabled
         case isTimeInRangeEnabled
         case timeInRangePeriod
         case timeInRangeTarget

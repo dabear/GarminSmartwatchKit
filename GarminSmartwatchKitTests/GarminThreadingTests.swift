@@ -91,11 +91,12 @@ import Testing
         #expect(rig.manager.owedDeliveries.isEmpty)
         #expect(rig.manager.absentApps.isEmpty)
         #expect(rig.manager.lastSentDataHashes.isEmpty)
+        #expect(rig.manager.announcedCommandApps.isEmpty)
     }
 
     @Test("A resend still waiting for its delay is not sent after deletion")
     func noRetryAfterDelete() async {
-        let rig = DeliveryRig(datafield: .none, devices: [0])
+        let rig = DeliveryRig(datafields: [], devices: [0])
         rig.manager.sendRetryDelay = 0.2
         rig.spy.script([.failure_Timeout], for: rig.watchfaceUUID, on: rig.deviceA.uuid)
         rig.broadcast(120)
@@ -109,7 +110,7 @@ import Testing
 
     @Test("A send completing after deletion does not flush what its app was owed")
     func noOwedFlushAfterDelete() async {
-        let rig = DeliveryRig(datafield: .none, devices: [0])
+        let rig = DeliveryRig(datafields: [], devices: [0])
         rig.spy.holdsCompletions = true
         rig.broadcast(120)
         #expect(rig.spy.pendingCount == 1)
@@ -133,16 +134,16 @@ import Testing
         let rig = DeliveryRig()
         rig.manager.deviceStatusChanged(rig.deviceA, status: .notConnected)
         rig.broadcast(120)
-        let before = rig.spy.sent.count
+        let before = rig.spy.sent.count + rig.spy.notices.count
 
         await rig.manager.delete()
         rig.broadcast(121)
         rig.manager.deviceCharacteristicsDiscovered(rig.deviceA)
         rig.hearFrom(rig.watchfaceUUID, on: rig.deviceA)
-        rig.manager.receivedMessage("status", from: rig.app(rig.watchfaceUUID, on: rig.deviceB))
+        rig.manager.receivedMessage(["v": 1, "req": "status"], from: rig.app(rig.watchfaceUUID, on: rig.deviceB))
         rig.manager.updateDeviceList([rig.deviceA])
         await rig.settle()
 
-        #expect(rig.spy.sent.count == before)
+        #expect(rig.spy.sent.count + rig.spy.notices.count == before)
     }
 }

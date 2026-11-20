@@ -15,7 +15,10 @@ final class SpyConnectIQClient: GarminConnectIQClient, @unchecked Sendable {
         let deviceUUID: UUID
     }
 
+    /// Everything sent except command app notices, which are kept apart in `notices`: they go out with
+    /// every registration, and the delivery counts below are about state, presets and acks.
     private(set) var sent: [Sent] = []
+    private(set) var notices: [Sent] = []
     private(set) var registeredDevices: [UUID] = []
     private(set) var registeredApps: [(appUUID: UUID, deviceUUID: UUID)] = []
     /// Sends made off the main thread; delivery state lives on main, so this stays 0.
@@ -52,7 +55,11 @@ final class SpyConnectIQClient: GarminConnectIQClient, @unchecked Sendable {
         let deviceUUID: UUID = app.device.uuid
         let record = Sent(message: message, appUUID: app.uuid, deviceUUID: deviceUUID)
         if !Thread.isMainThread { offMainSends += 1 }
-        sent.append(record)
+        if (message as? [String: Any])?["req"] as? String == "ownerMode" {
+            notices.append(record)
+        } else {
+            sent.append(record)
+        }
         if holdsCompletions {
             pending.append((record, completion))
             return
@@ -98,12 +105,13 @@ final class DeliveryRig {
     let watchfaceUUID = GarminWatchface.complication.watchfaceUUID!
     let swissalpineUUID = GarminDatafield.swissalpine.datafieldUUID!
     let trioFieldUUID = GarminDatafield.trio.datafieldUUID!
+    let loopgraphUUID = GarminDatafield.loopgraph.datafieldUUID!
 
     /// The complication watch app and the Swissalpine datafield on both devices unless told otherwise.
     init(
         watchface: GarminWatchface = .complication,
         isWatchfaceDataEnabled: Bool = true,
-        datafield: GarminDatafield = .swissalpine,
+        datafields: [GarminDatafield] = [.swissalpine],
         devices: [Int] = [0, 1]
     ) {
         manager.connectIQClient = spy
@@ -111,7 +119,7 @@ final class DeliveryRig {
         var settings = GarminWatchSettings()
         settings.watchface = watchface
         settings.isWatchfaceDataEnabled = isWatchfaceDataEnabled
-        settings.datafield = datafield
+        settings.datafields = datafields
         manager.settings = settings
         let all = [deviceA, deviceB]
         manager.updateDeviceList(devices.map { all[$0] })
@@ -185,7 +193,7 @@ final class DeliveryRig {
 
     @Test("The payload goes out as the parsed JSON of the broadcast data")
     func payloadIsParsedJSON() throws {
-        let rig = DeliveryRig(datafield: .none, devices: [0])
+        let rig = DeliveryRig(datafields: [], devices: [0])
         rig.broadcast(120)
         let message = try #require(rig.spy.sent.first?.message as? [[String: Any]])
         #expect(message.first?["sgv"] as? Int == 120)
@@ -205,7 +213,7 @@ final class DeliveryRig {
 
     @Test("A completion that arrives off the main queue still settles the delivery state")
     func completionHopsToMain() async {
-        let rig = DeliveryRig(datafield: .none, devices: [0])
+        let rig = DeliveryRig(datafields: [], devices: [0])
         rig.spy.holdsCompletions = true
         rig.broadcast(120)
         #expect(rig.spy.sent.count == 1)
@@ -218,7 +226,7 @@ final class DeliveryRig {
         #expect(rig.spy.sent.count == 1)
     }
 
-    @Test("Without the watchface enabled only the datafield gets sent to")
+    @Test("Without the watchface enabled only the datafields get sent to")
     func watchfaceDisabled() {
         let rig = DeliveryRig(isWatchfaceDataEnabled: false, devices: [0])
         rig.broadcast(120)
@@ -289,7 +297,7 @@ final class DeliveryRig {
         rig.broadcast(120)
         let before = rig.spy.sent.count
 
-        rig.hearFrom(rig.trioFieldUUID, on: rig.deviceA)
+        rig.hearFrom(rig.loopgraphUUID, on: rig.deviceA)
         rig.hearFrom(rig.swissalpineUUID, on: IQDevice(id: UUID(), modelName: "fenix 8", friendlyName: "Stranger")!)
         await rig.settle()
 
@@ -361,13 +369,13 @@ final class DeliveryRig {
 
     @Test("A status request makes the next broadcast reach the app, even when an older send confirms the same state meanwhile")
     func statusRequestForcesNextBroadcast() async {
-        let rig = DeliveryRig(datafield: .none, devices: [0])
+        let rig = DeliveryRig(datafields: [], devices: [0])
         let key = rig.key(rig.watchfaceUUID, on: rig.deviceA)
         rig.spy.holdsCompletions = true
         rig.broadcast(120)
         #expect(rig.spy.pendingCount == 1)
 
-        rig.manager.receivedMessage("status", from: rig.app(rig.watchfaceUUID, on: rig.deviceA))
+        rig.manager.receivedMessage(["v": 1, "req": "status"], from: rig.app(rig.watchfaceUUID, on: rig.deviceA))
         #expect(await rig.eventually { rig.manager.forcedStateKeys.contains(key) })
 
         // The send in flight before the request succeeds afterwards and confirms the same state.
@@ -385,10 +393,10 @@ final class DeliveryRig {
 
     @Test("A status request from an unreachable app leaves the state owed instead")
     func statusRequestWhileDisconnected() async {
-        let rig = DeliveryRig(datafield: .none, devices: [0])
+        let rig = DeliveryRig(datafields: [], devices: [0])
         let key = rig.key(rig.watchfaceUUID, on: rig.deviceA)
         rig.broadcast(120)
-        rig.manager.receivedMessage("status", from: rig.app(rig.watchfaceUUID, on: rig.deviceA))
+        rig.manager.receivedMessage(["v": 1, "req": "status"], from: rig.app(rig.watchfaceUUID, on: rig.deviceA))
         #expect(await rig.eventually { rig.manager.forcedStateKeys.contains(key) })
 
         rig.manager.deviceStatusChanged(rig.deviceA, status: .notConnected)
@@ -402,7 +410,7 @@ final class DeliveryRig {
 
     @Test("Another failure is resent exactly once after the retry delay")
     func resendOnce() async {
-        let rig = DeliveryRig(datafield: .none, devices: [0])
+        let rig = DeliveryRig(datafields: [], devices: [0])
         rig.spy.script([.failure_Timeout, .success], for: rig.watchfaceUUID, on: rig.deviceA.uuid)
         rig.broadcast(120)
         #expect(rig.spy.sent.count == 1, "The resend waits for the delay")
@@ -418,7 +426,7 @@ final class DeliveryRig {
 
     @Test("When the resend fails too, no third attempt is made and the state stays owed")
     func failedResendStaysOwed() async {
-        let rig = DeliveryRig(datafield: .none, devices: [0])
+        let rig = DeliveryRig(datafields: [], devices: [0])
         rig.spy.setResult(.failure_DeviceIsBusy, for: rig.watchfaceUUID, on: rig.deviceA.uuid)
         rig.broadcast(120)
         #expect(await rig.eventually { rig.spy.sent.count == 2 })
@@ -467,7 +475,7 @@ final class DeliveryRig {
 
     @Test("A newer confirmed state replaces what an app was owed")
     func newerStateSupersedesOwed() async {
-        let rig = DeliveryRig(datafield: .none, devices: [0])
+        let rig = DeliveryRig(datafields: [], devices: [0])
         let key = rig.key(rig.watchfaceUUID, on: rig.deviceA)
         rig.spy.script([.failure_Timeout, .failure_Timeout], for: rig.watchfaceUUID, on: rig.deviceA.uuid)
         rig.broadcast(120)
@@ -539,7 +547,7 @@ final class DeliveryRig {
 
     @Test("Every status that is not connected stops sends, and connected restores them")
     func statusesThatStopSends() {
-        let rig = DeliveryRig(datafield: .none, devices: [0])
+        let rig = DeliveryRig(datafields: [], devices: [0])
         let statuses: [IQDeviceStatus] = [.notConnected, .notFound, .bluetoothNotReady, .invalidDevice]
         for (index, status) in statuses.enumerated() {
             rig.manager.deviceStatusChanged(rig.deviceA, status: status)
@@ -578,7 +586,7 @@ final class DeliveryRig {
 
         // One app less: the datafield is no longer chosen.
         var settings = rig.manager.settings
-        settings.datafield = .none
+        settings.datafields = []
         rig.manager.settings = settings
         #expect(Set(rig.manager.owedDeliveries.keys) == [rig.key(rig.watchfaceUUID, on: rig.deviceB)])
 
@@ -598,24 +606,48 @@ final class DeliveryRig {
         #expect(rig.spy.sent.count == 8)
     }
 
-    // MARK: - Watchface and datafield
+    // MARK: - Several datafields
 
-    @Test("An app that fails does not hold back the other on the same device, which is confirmed on its own")
-    func appsFailIndependently() async {
-        let rig = DeliveryRig(devices: [0])
-        rig.spy.script([.failure_Timeout, .failure_Timeout], for: rig.swissalpineUUID, on: rig.deviceA.uuid)
+    @Test("Each chosen datafield on each device gets its own send and its own delivery key")
+    func severalDatafields() {
+        let rig = DeliveryRig(isWatchfaceDataEnabled: false, datafields: [.trio, .swissalpine, .loopgraph])
+        // LoopGraph is registered under both of its app IDs: 4 apps per device.
+        #expect(rig.spy.registeredApps.count == 8)
+
+        rig.broadcast(120)
+        #expect(rig.spy.sent.count == 8)
+        let fields = [rig.trioFieldUUID, rig.swissalpineUUID] + GarminDatafield.loopgraph.datafieldUUIDs
+        var keys = Set<String>()
+        for uuid in fields {
+            for device in [rig.deviceA, rig.deviceB] {
+                #expect(rig.sends(to: uuid, on: device).count == 1)
+                keys.insert(rig.key(uuid, on: device))
+            }
+        }
+        #expect(keys.count == 8)
+        #expect(Set(rig.manager.lastSentDataHashes.keys) == keys)
+    }
+
+    @Test("A datafield that fails does not hold back the others, which are confirmed on their own")
+    func datafieldsFailIndependently() async {
+        let rig = DeliveryRig(isWatchfaceDataEnabled: false, datafields: [.trio, .swissalpine, .loopgraph], devices: [0])
+        rig.spy.setResult(.failure_AppNotFound, for: rig.swissalpineUUID, on: rig.deviceA.uuid)
+        rig.spy.script([.failure_Timeout, .failure_Timeout], for: rig.loopgraphUUID, on: rig.deviceA.uuid)
         rig.broadcast(120)
 
-        let watchfaceKey = rig.key(rig.watchfaceUUID, on: rig.deviceA)
+        let trioKey = rig.key(rig.trioFieldUUID, on: rig.deviceA)
         let swissKey = rig.key(rig.swissalpineUUID, on: rig.deviceA)
-        #expect(await rig.eventually { rig.manager.owedDeliveries[swissKey] != nil })
+        let loopKey = rig.key(rig.loopgraphUUID, on: rig.deviceA)
+        #expect(await rig.eventually { rig.manager.owedDeliveries[loopKey] != nil })
 
-        #expect(rig.manager.lastSentDataHashes[watchfaceKey] != nil)
-        #expect(rig.sends(to: rig.swissalpineUUID).count == 2)
-        #expect(Set(rig.manager.owedDeliveries.keys) == [swissKey])
+        #expect(rig.manager.lastSentDataHashes[trioKey] != nil)
+        #expect(rig.manager.absentApps == [swissKey])
+        #expect(rig.sends(to: rig.loopgraphUUID).count == 2)
+        #expect(Set(rig.manager.owedDeliveries.keys) == [swissKey, loopKey])
 
         rig.broadcast(120)
-        #expect(rig.sends(to: rig.watchfaceUUID).count == 1, "The confirmed watchface is not sent the unchanged state")
-        #expect(rig.sends(to: rig.swissalpineUUID).count == 3, "The owed datafield gets it again")
+        #expect(rig.sends(to: rig.trioFieldUUID).count == 1, "The confirmed datafield is not sent the unchanged state")
+        #expect(rig.sends(to: rig.swissalpineUUID).count == 1, "The absent datafield is skipped")
+        #expect(rig.sends(to: rig.loopgraphUUID).count == 3, "The owed datafield gets it again")
     }
 }

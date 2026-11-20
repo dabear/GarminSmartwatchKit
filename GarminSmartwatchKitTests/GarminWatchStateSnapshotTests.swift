@@ -139,6 +139,175 @@ import Testing
         #expect(json[0]["forecastLow"] == nil && json[0]["forecastHigh"] == nil && json[0]["forecastDate"] == nil)
     }
 
+    // MARK: Forecast formats
+
+    @Test("Forecast keys follow the formats asked for: cone, mountrcg's pairs, both or none",
+          arguments: [Set<GarminForecastFormat>(), [.cone], [.predictedPairs], [.cone, .predictedPairs], [.none]])
+    func forecastFormats(_ formats: Set<GarminForecastFormat>) throws {
+        let curves = [ramp(from: 120, step: 1, count: 16)]
+        var options = options
+        options.forecastFormats = formats
+        let state = first(curves, options: options, at: now.addingTimeInterval(-60))
+
+        let sendsCone = formats.contains(.cone)
+        let sendsPairs = formats.contains(.predictedPairs)
+        #expect((state.forecastDate != nil) == sendsCone)
+        #expect((state.forecastLow != nil) == sendsCone)
+        #expect((state.forecastHigh != nil) == sendsCone)
+        #expect((state.predictedMin != nil) == sendsPairs)
+        #expect((state.predictedMax != nil) == sendsPairs)
+
+        let json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode([state])) as? [[String: Any]])
+        let keys = Set(json[0].keys)
+        #expect(keys.isDisjoint(with: ["forecastDate", "forecastLow", "forecastHigh"]) == !sendsCone)
+        #expect(keys.isDisjoint(with: ["predicted", "predictedMin", "predictedMax"]) == !sendsPairs)
+    }
+
+    // MARK: Predicted glucose for LoopGraph (mountrcg's format)
+
+    private var withPredicted: GarminWatchState.DisplayOptions {
+        var options = options
+        options.forecastFormats = [.cone, .predictedPairs]
+        return options
+    }
+
+    /// A curve of `count` values from `start`, 5 minutes apart, `base` plus `step` per index.
+    private func ramp(from base: Double, step: Double, count: Int, start: Date? = nil) -> [PredictedGlucoseValue] {
+        let start = start ?? now
+        return (0 ..< count).map { index in
+            PredictedGlucoseValue(startDate: start.addingTimeInterval(Double(index) * 300), quantity: mgdL(base + step * Double(index)))
+        }
+    }
+
+    private func first(_ curves: [[PredictedGlucoseValue]], options: GarminWatchState.DisplayOptions, at time: Date? = nil) -> GarminWatchState {
+        var host = hostData(history: [reading(minutesAgo: 0, 110)])
+        host.loopState.predictedGlucose = curves
+        return GarminWatchState.states(from: host, options: options, now: time ?? now).first!
+    }
+
+    private func ms(_ minutesAfter: Double) -> UInt64 {
+        UInt64(now.addingTimeInterval(minutesAfter * 60).timeIntervalSince1970 * 1000)
+    }
+
+    @Test("The predicted keys are left out unless asked for, as the default") func predictedOffByDefault() throws {
+        let curves = [ramp(from: 120, step: 1, count: 20)]
+        let state = first(curves, options: options, at: now.addingTimeInterval(-60))
+        #expect(state.predicted == nil && state.predictedMin == nil && state.predictedMax == nil)
+        #expect(state.forecastLow != nil, "the cone is sent as before")
+        #expect(GarminWatchState.DisplayOptions(primaryAttributeChoice: "", secondaryAttributeChoice: "", glucoseColorScheme: "", historySpan: 0, historySpacing: 0).forecastFormats == [.cone])
+
+        let json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode([state])) as? [[String: Any]])
+        #expect(json[0]["predicted"] == nil && json[0]["predictedMin"] == nil && json[0]["predictedMax"] == nil)
+    }
+
+    @Test("With the flag, a single curve (Loop) is the line, the minimum and the maximum") func predictedSingleCurve() {
+        // Start an hour before now so every sampled time is still ahead of it.
+        let state = first([ramp(from: 120, step: 1, count: 20)], options: withPredicted, at: now.addingTimeInterval(-60))
+        let pairs = [0.0, 10, 20, 30, 40, 50, 60, 70].map { [ms($0), UInt64(120 + $0 / 5)] }
+        #expect(state.predicted == pairs)
+        #expect(state.predictedMin == pairs)
+        #expect(state.predictedMax == pairs)
+    }
+
+    @Test("Each pair has its value's own date: Loop's curve starts at the reading, then the 5-minute grid")
+    func predictedPairsUseValueDates() {
+        // As Loop: first value at the newest reading (2 minutes past the grid), then on the grid.
+        let start = now.addingTimeInterval(120)
+        let curve = [PredictedGlucoseValue(startDate: start, quantity: mgdL(120))] + (1 ..< 16).map { index in
+            PredictedGlucoseValue(startDate: now.addingTimeInterval(Double(index) * 300), quantity: mgdL(120 + Double(index)))
+        }
+        let pairs = GarminWatchState.predictedPairs([curve], now: now).min ?? []
+        #expect(pairs.first?[0] == UInt64(start.timeIntervalSince1970 * 1000))
+        #expect(pairs.dropFirst().map { $0[0] } == (1 ..< 8).map { ms(Double($0) * 10) })
+    }
+
+    @Test("COB is sent rounded to 2 decimal places") func cobRounded() throws {
+        var state = GarminWatchState()
+        state.cob = 23.4567891
+        let json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any])
+        #expect(json["cob"] as? Double == 23.46)
+    }
+
+    @Test("Sampling is mountrcg's: even indexes up to 15 (10-minute steps, 70 minutes), anchored at the first value") func predictedSampling() {
+        let state = first([ramp(from: 100, step: 1, count: 40)], options: withPredicted, at: now.addingTimeInterval(-60))
+        let pairs = state.predictedMin ?? []
+        #expect(pairs.count == 8)
+        #expect(pairs.map { $0[0] } == (0 ..< 8).map { ms(Double($0) * 10) }, "index i is at the anchor plus i * 5 minutes")
+        #expect(pairs.map { $0[1] } == (0 ..< 8).map { UInt64(100 + 2 * $0) }, "the value of indexes 0, 2, ... 14")
+        #expect(pairs.map { $0[0] } == pairs.map { $0[0] }.sorted(), "ascending")
+    }
+
+    @Test("Pairs at or before now and values that aren't above 0 are left out") func predictedFiltered() {
+        // Now is 25 minutes after the anchor: indexes 0, 2, 4 (0, 10, 20 min) are past.
+        let late = first([ramp(from: 100, step: 1, count: 20)], options: withPredicted, at: now.addingTimeInterval(25 * 60))
+        #expect(late.predictedMin?.first == [ms(30), 106])
+        #expect(late.predictedMin?.count == 5)
+        // At exactly the anchor, index 0 is not after now.
+        let exact = first([ramp(from: 100, step: 1, count: 20)], options: withPredicted, at: now)
+        #expect(exact.predictedMin?.first == [ms(10), 102])
+        // A 0 value (and below) isn't sent, the others are.
+        let zeros = first([curve([100, 99, 0, 98, -5, 97, 96, 95])], options: withPredicted, at: now.addingTimeInterval(-60))
+        #expect(zeros.predictedMin == [[ms(0), 100], [ms(30), 96]], "indexes 2 and 4 are 0 and -5")
+    }
+
+    @Test("Several curves give the minimum and maximum at each index; the line is left out") func predictedEnvelope() {
+        let curves = [
+            ramp(from: 120, step: 2, count: 20),
+            ramp(from: 120, step: -3, count: 20),
+            ramp(from: 120, step: 0, count: 20),
+            ramp(from: 120, step: 1, count: 4),
+        ]
+        let state = first(curves, options: withPredicted, at: now.addingTimeInterval(-60))
+        // Index 0, 2, 4, ... : curves 1 to 3 have all of them, curve 4 the first 4 indexes.
+        #expect(state.predictedMin?.map { $0[1] } == [120, 114, 108, 102, 96, 90, 84, 78])
+        #expect(state.predictedMax?.map { $0[1] } == [120, 124, 128, 132, 136, 140, 144, 148])
+        #expect(state.predictedMin?.map { $0[0] } == state.predictedMax?.map { $0[0] })
+        #expect(state.predicted == nil, "as Trio's branch sends only the envelope")
+    }
+
+    @Test("Without a forecast, or without a pair ahead of now, the keys are absent") func predictedMissing() throws {
+        let none = first([], options: withPredicted)
+        #expect(none.predicted == nil && none.predictedMin == nil && none.predictedMax == nil)
+        let empty = first([[]], options: withPredicted)
+        #expect(empty.predicted == nil && empty.predictedMin == nil && empty.predictedMax == nil)
+        let past = first([ramp(from: 120, step: 1, count: 20)], options: withPredicted, at: now.addingTimeInterval(3 * 3600))
+        #expect(past.predicted == nil && past.predictedMin == nil && past.predictedMax == nil)
+
+        let json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode([none])) as? [[String: Any]])
+        #expect(json[0]["predicted"] == nil && json[0]["predictedMin"] == nil && json[0]["predictedMax"] == nil)
+    }
+
+    @Test("Only the first entry has them; they're whole mg/dL, from any unit") func predictedFirstEntryOnly() {
+        var host = hostData(history: series(every: 5, for: 30))
+        host.loopState.predictedGlucose = [(0 ..< 20).map { index in
+            PredictedGlucoseValue(
+                startDate: now.addingTimeInterval(Double(index) * 300),
+                quantity: LoopQuantity(unit: .millimolesPerLiter, doubleValue: 6.7)
+            )
+        }]
+        var withBoth = withHistory
+        withBoth.forecastFormats = [.cone, .predictedPairs]
+        let states = GarminWatchState.states(from: host, options: withBoth, now: now.addingTimeInterval(-60))
+        #expect(states.count > 1)
+        #expect(states[0].predictedMin?.first == [ms(0), 121], "6.7 mmol/L is 120.7 mg/dL")
+        #expect(states.dropFirst().allSatisfy { $0.predicted == nil && $0.predictedMin == nil && $0.predictedMax == nil })
+    }
+
+    @Test("The JSON has arrays of [milliseconds, mg/dL] integer pairs") func predictedJSON() throws {
+        let state = first([ramp(from: 120, step: 1, count: 20)], options: withPredicted, at: now.addingTimeInterval(-60))
+        let json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode([state])) as? [[String: Any]])
+        for key in ["predicted", "predictedMin", "predictedMax"] {
+            let pairs = try #require(json[0][key] as? [[NSNumber]], Comment(rawValue: key))
+            #expect(pairs.count == 8)
+            #expect(pairs.allSatisfy { $0.count == 2 })
+            #expect(pairs[0] == [NSNumber(value: ms(0)), 120])
+            #expect(pairs[1] == [NSNumber(value: ms(10)), 122])
+            #expect(pairs.flatMap { $0 }.allSatisfy { CFNumberIsFloatType($0 as CFNumber) == false })
+        }
+        let text = try #require(String(data: JSONEncoder().encode([state]), encoding: .utf8))
+        #expect(text.contains("\"predictedMin\":[[\(ms(0)),120],[\(ms(10)),122]"))
+    }
+
     @Test("The first entry carries every value") func firstEntry() {
         let history = [reading(minutesAgo: 10, 100), reading(minutesAgo: 5, 104), reading(minutesAgo: 0, 110, .up)]
         let states = GarminWatchState.states(from: hostData(
@@ -449,7 +618,7 @@ import Testing
         let manager = GarminSmartwatchManager()
         var settings = GarminWatchSettings()
         settings.watchface = .swissalpine
-        settings.datafield = .none
+        settings.datafields = []
         settings.primaryAttributeChoice = .isf
         settings.secondaryAttributeChoice = .eventualBG
         settings.glucoseColorScheme = .dynamicColor
@@ -469,7 +638,7 @@ import Testing
         let saved = Data(#"{"watchface":"swissalpine","datafield":"none","primaryAttributeChoice":"isf","secondaryAttributeChoice":"eventualBG"}"#.utf8)
         let settings = try JSONDecoder().decode(GarminWatchSettings.self, from: saved)
         #expect(settings.watchface == .swissalpine)
-        #expect(settings.datafield == GarminDatafield.none)
+        #expect(settings.datafields.isEmpty)
         #expect(settings.primaryAttributeChoice == .isf)
         #expect(settings.secondaryAttributeChoice == .eventualBG)
         #expect(settings.glucoseColorScheme == .staticColor)
@@ -483,7 +652,7 @@ import Testing
         let saved = Data(#"{"watchface":"retired","datafield":"swissalpine","glucoseColorScheme":"dynamic","isWatchfaceDataEnabled":false}"#.utf8)
         let settings = try JSONDecoder().decode(GarminWatchSettings.self, from: saved)
         #expect(settings.watchface == .trio)
-        #expect(settings.datafield == .swissalpine)
+        #expect(settings.datafields == [.swissalpine])
         #expect(settings.glucoseColorScheme == .dynamicColor)
         #expect(settings.isWatchfaceDataEnabled == false)
     }
