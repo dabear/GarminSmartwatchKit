@@ -183,6 +183,46 @@ final class DeliveryRig {
         #expect(rig.spy.sent.count == 8)
     }
 
+    /// A state with every optional part, the forecast set by `forecastLow`.
+    private func fullState(sgv: Int = 120, forecastLow: Int = 100) -> Data {
+        try! JSONSerialization.data(withJSONObject: [
+            [
+                "sgv": sgv, "direction": "Flat",
+                "displayPrimaryAttributeChoice": "cob", "displaySecondaryAttributeChoice": "tbr",
+                "glucoseColorScheme": "dynamic",
+                "forecastDate": 1_800_000_000_000, "forecastLow": [forecastLow], "forecastHigh": [140],
+                "tirLow": 5, "tirInRange": 80, "tirHigh": 15,
+            ],
+            ["sgv": sgv + 5, "date": 1_799_999_700_000],
+        ])
+    }
+
+    @Test("Each app gets only the parts it reads; the readings and shared values go to all")
+    func partsPerApp() throws {
+        let rig = DeliveryRig(devices: [0])
+        rig.manager.broadcastWatchStateData(fullState())
+
+        let watchApp = try #require(rig.sends(to: rig.watchfaceUUID).first?.message as? [[String: Any]])
+        #expect(Set(watchApp[0].keys) == ["sgv", "direction", "displayPrimaryAttributeChoice", "displaySecondaryAttributeChoice", "glucoseColorScheme"])
+        #expect(watchApp.count == 2, "History entries are kept")
+
+        let datafield = try #require(rig.sends(to: rig.swissalpineUUID).first?.message as? [[String: Any]])
+        #expect(Set(datafield[0].keys) == ["sgv", "direction", "displayPrimaryAttributeChoice", "displaySecondaryAttributeChoice"])
+    }
+
+    @Test("A change in a part no app reads sends nothing; one in a part an app reads goes to that app")
+    func unreadChangeNotSent() {
+        let rig = DeliveryRig(devices: [0])
+        rig.manager.broadcastWatchStateData(fullState())
+        #expect(rig.spy.sent.count == 2)
+
+        rig.manager.broadcastWatchStateData(fullState(forecastLow: 95))
+        #expect(rig.spy.sent.count == 2, "Neither app reads the forecast")
+
+        rig.manager.broadcastWatchStateData(fullState(sgv: 118, forecastLow: 95))
+        #expect(rig.spy.sent.count == 4)
+    }
+
     @Test("The payload goes out as the parsed JSON of the broadcast data")
     func payloadIsParsedJSON() throws {
         let rig = DeliveryRig(datafield: .none, devices: [0])

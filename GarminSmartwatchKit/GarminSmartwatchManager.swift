@@ -95,8 +95,8 @@ public final class GarminSmartwatchManager: NSObject {
     /// The only send gate, set by the SDK's device status callbacks.
     private(set) var disconnectedDevices: Set<UUID> = []
 
-    /// Latest broadcast payload, sent again to apps that are owed state.
-    private var lastBroadcast: (payload: Any, hash: Int)?
+    /// Latest broadcast state, whole, sent again (as each app gets it) to apps that are owed state.
+    private var lastBroadcast: Any?
 
     /// Apps that asked for state: the next broadcast goes to them even when unchanged, whatever an
     /// older send's completion confirms in the meantime. Consumed by that broadcast.
@@ -391,43 +391,49 @@ public final class GarminSmartwatchManager: NSObject {
         deviceSelectionPromise = nil
     }
 
-    /// Sends the state once to every registered app that hasn't confirmed this exact state yet.
+    /// Sends the state once to every registered app that hasn't confirmed this exact state yet,
+    /// each with only the parts of it that app reads.
     func broadcastWatchStateData(_ data: Data) {
         guard !isDeleted else { return }
-        // Stable content-based hash (sorted JSON bytes)
-        let currentHash: Int
-        if let sortedData = try? JSONSerialization.data(
-            withJSONObject: JSONSerialization.jsonObject(with: data, options: []),
-            options: [.sortedKeys]
-        ) {
-            currentHash = sortedData.base64EncodedString().hashValue
-        } else {
-            currentHash = data.count // Fallback
-        }
-
         guard let jsonObject = try? JSONSerialization.jsonObject(with: data, options: []) else {
             log(type: .error, "Garmin watch state is not valid JSON")
             return
         }
-        lastBroadcast = (jsonObject, currentHash)
+        lastBroadcast = jsonObject
 
         for app in watchApps {
             guard let key = deliveryKey(for: app), let device = app.device else { continue }
             let appName = appDisplayName(for: app.uuid)
+            let (payload, stateHash) = appPayload(jsonObject, for: app)
 
-            if lastSentDataHashes[key] == currentHash, owedDeliveries[key]?.stateHash == nil, !forcedStateKeys.contains(key) {
+            if lastSentDataHashes[key] == stateHash, owedDeliveries[key]?.stateHash == nil, !forcedStateKeys.contains(key) {
                 log("Garmin \(appName) skipped, data unchanged")
                 continue
             }
             forcedStateKeys.remove(key)
             // An unreachable app is owed this state instead.
             guard isReachable(key: key, device: device, appName: appName) else {
-                recordOwed(for: key, stateHash: currentHash)
+                recordOwed(for: key, stateHash: stateHash)
                 continue
             }
             log("Sending state to Garmin \(appName)")
-            sendMessage(jsonObject, to: app, appName: appName, stateHash: currentHash)
+            sendMessage(payload, to: app, appName: appName, stateHash: stateHash)
         }
+    }
+
+    /// What the app reads; an app the settings don't name gets everything.
+    func payloadContent(for app: IQApp) -> GarminPayloadContent {
+        if app.uuid == currentWatchface.watchfaceUUID { return currentWatchface.payloadContent }
+        if app.uuid == currentDatafield.datafieldUUID { return currentDatafield.payloadContent }
+        return .all
+    }
+
+    /// The state as `app` gets it, and a stable hash of that (sorted JSON bytes), so an app is
+    /// sent again only when what it gets changes.
+    private func appPayload(_ state: Any, for app: IQApp) -> (payload: Any, hash: Int) {
+        let payload = GarminWatchState.payload(state, for: payloadContent(for: app))
+        let sorted = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+        return (payload, sorted?.hashValue ?? 0)
     }
 
     // MARK: - Delivery
@@ -467,9 +473,11 @@ public final class GarminSmartwatchManager: NSObject {
     /// Any delivered message proves the channel, so what the app is still owed goes out now.
     private func flushOwed(to app: IQApp, key: String, appName: String) {
         guard !isDeleted, let owed = owedDeliveries.removeValue(forKey: key) else { return }
-        if owed.stateHash != nil, let broadcast = lastBroadcast, lastSentDataHashes[key] != broadcast.hash {
+        guard owed.stateHash != nil, let state = lastBroadcast else { return }
+        let (payload, stateHash) = appPayload(state, for: app)
+        if lastSentDataHashes[key] != stateHash {
             log("Sending owed state to Garmin \(appName)")
-            sendMessage(broadcast.payload, to: app, appName: appName, stateHash: broadcast.hash)
+            sendMessage(payload, to: app, appName: appName, stateHash: stateHash)
         }
     }
 

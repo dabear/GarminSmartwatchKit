@@ -131,6 +131,8 @@ public struct GarminPayloadContent: OptionSet, Hashable, Sendable {
     public static let forecast = GarminPayloadContent(rawValue: 1 << 2)
     /// The time in range.
     public static let timeInRange = GarminPayloadContent(rawValue: 1 << 3)
+
+    public static let all: GarminPayloadContent = [.attributes, .colorScheme, .forecast, .timeInRange]
 }
 
 /// The Connect IQ watch apps that take the watchface slot.
