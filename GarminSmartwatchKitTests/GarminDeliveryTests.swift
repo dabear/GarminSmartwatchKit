@@ -18,6 +18,8 @@ final class SpyConnectIQClient: GarminConnectIQClient, @unchecked Sendable {
     private(set) var sent: [Sent] = []
     private(set) var registeredDevices: [UUID] = []
     private(set) var registeredApps: [(appUUID: UUID, deviceUUID: UUID)] = []
+    /// Sends made off the main thread; delivery state lives on main, so this stays 0.
+    private(set) var offMainSends = 0
 
     /// When on, a send is not answered until `completePending` is called.
     var holdsCompletions = false
@@ -49,6 +51,7 @@ final class SpyConnectIQClient: GarminConnectIQClient, @unchecked Sendable {
     func send(_ message: Any, to app: IQApp, completion: @escaping (IQSendMessageResult) -> Void) {
         let deviceUUID: UUID = app.device.uuid
         let record = Sent(message: message, appUUID: app.uuid, deviceUUID: deviceUUID)
+        if !Thread.isMainThread { offMainSends += 1 }
         sent.append(record)
         if holdsCompletions {
             pending.append((record, completion))
@@ -84,8 +87,9 @@ final class SpyConnectIQClient: GarminConnectIQClient, @unchecked Sendable {
     }
 }
 
+/// Shared with the threading tests.
 @MainActor
-private final class DeliveryRig {
+final class DeliveryRig {
     let spy = SpyConnectIQClient()
     let manager = GarminSmartwatchManager()
     let deviceA = IQDevice(id: UUID(), modelName: "fenix 8", friendlyName: "A")!
@@ -311,6 +315,87 @@ private final class DeliveryRig {
         #expect(rig.sends(to: rig.swissalpineUUID, on: rig.deviceA).count == 2)
         #expect(rig.manager.owedDeliveries[key] == nil)
         #expect(rig.manager.lastSentDataHashes[key] != nil)
+    }
+
+    @Test("A reconnect lets a device's absent apps be tried again and delivers what they are owed")
+    func characteristicsClearAbsent() {
+        let rig = DeliveryRig()
+        let keyA = rig.key(rig.swissalpineUUID, on: rig.deviceA)
+        let keyB = rig.key(rig.swissalpineUUID, on: rig.deviceB)
+        rig.spy.setResult(.failure_AppNotFound, for: rig.swissalpineUUID, on: rig.deviceA.uuid)
+        rig.spy.setResult(.failure_AppNotFound, for: rig.swissalpineUUID, on: rig.deviceB.uuid)
+        rig.broadcast(120)
+        #expect(rig.manager.absentApps == [keyA, keyB])
+
+        // Installed meanwhile on watch A.
+        rig.spy.setResult(nil, for: rig.swissalpineUUID, on: rig.deviceA.uuid)
+        rig.manager.deviceCharacteristicsDiscovered(rig.deviceA)
+
+        #expect(rig.manager.absentApps == [keyB], "Only the reconnected device's marks are cleared")
+        #expect(rig.sends(to: rig.swissalpineUUID, on: rig.deviceA).count == 2)
+        #expect(rig.manager.owedDeliveries[keyA] == nil)
+        #expect(rig.manager.lastSentDataHashes[keyA] != nil)
+        #expect(rig.sends(to: rig.swissalpineUUID, on: rig.deviceB).count == 1)
+    }
+
+    @Test("A device reported connected lets its absent apps be tried by the next broadcast")
+    func connectedClearsAbsent() {
+        let rig = DeliveryRig(devices: [0])
+        let key = rig.key(rig.swissalpineUUID, on: rig.deviceA)
+        rig.spy.setResult(.failure_AppNotFound, for: rig.swissalpineUUID, on: rig.deviceA.uuid)
+        rig.broadcast(120)
+        #expect(rig.manager.absentApps == [key])
+
+        rig.spy.setResult(nil, for: rig.swissalpineUUID, on: rig.deviceA.uuid)
+        rig.manager.deviceStatusChanged(rig.deviceA, status: .connected)
+        #expect(rig.manager.absentApps.isEmpty)
+        #expect(rig.sends(to: rig.swissalpineUUID).count == 1, "Nothing is sent by the status itself")
+
+        rig.broadcast(120)
+        #expect(rig.sends(to: rig.swissalpineUUID).count == 2)
+        #expect(rig.manager.lastSentDataHashes[key] != nil)
+        #expect(rig.sends(to: rig.watchfaceUUID).count == 1, "The confirmed watchface is not sent the unchanged state")
+    }
+
+    // MARK: - Status requests
+
+    @Test("A status request makes the next broadcast reach the app, even when an older send confirms the same state meanwhile")
+    func statusRequestForcesNextBroadcast() async {
+        let rig = DeliveryRig(datafield: .none, devices: [0])
+        let key = rig.key(rig.watchfaceUUID, on: rig.deviceA)
+        rig.spy.holdsCompletions = true
+        rig.broadcast(120)
+        #expect(rig.spy.pendingCount == 1)
+
+        rig.manager.receivedMessage("status", from: rig.app(rig.watchfaceUUID, on: rig.deviceA))
+        #expect(await rig.eventually { rig.manager.forcedStateKeys.contains(key) })
+
+        // The send in flight before the request succeeds afterwards and confirms the same state.
+        rig.spy.completePending()
+        #expect(rig.manager.lastSentDataHashes[key] != nil)
+
+        rig.broadcast(120)
+        #expect(rig.spy.sent.count == 2, "Sent again although the state is unchanged")
+        #expect(rig.manager.forcedStateKeys.isEmpty)
+
+        rig.spy.completePending()
+        rig.broadcast(120)
+        #expect(rig.spy.sent.count == 2, "The flag is used up by one broadcast")
+    }
+
+    @Test("A status request from an unreachable app leaves the state owed instead")
+    func statusRequestWhileDisconnected() async {
+        let rig = DeliveryRig(datafield: .none, devices: [0])
+        let key = rig.key(rig.watchfaceUUID, on: rig.deviceA)
+        rig.broadcast(120)
+        rig.manager.receivedMessage("status", from: rig.app(rig.watchfaceUUID, on: rig.deviceA))
+        #expect(await rig.eventually { rig.manager.forcedStateKeys.contains(key) })
+
+        rig.manager.deviceStatusChanged(rig.deviceA, status: .notConnected)
+        rig.broadcast(120)
+        #expect(rig.spy.sent.count == 1)
+        #expect(rig.manager.forcedStateKeys.isEmpty)
+        #expect(rig.manager.owedDeliveries[key]?.stateHash != nil)
     }
 
     // MARK: - Other failures
