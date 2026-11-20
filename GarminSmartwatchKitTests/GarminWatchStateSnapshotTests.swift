@@ -488,6 +488,25 @@ import Testing
         #expect(settings.isWatchfaceDataEnabled == false)
     }
 
+    @Test("Each watch app reads only its own part of the payload; the settings count the chosen watchface and datafield") func payloadContent() {
+        for watchface in GarminWatchface.allCases {
+            #expect(watchface.payloadContent == [.attributes, .colorScheme])
+        }
+        #expect(GarminDatafield.trio.payloadContent == .attributes)
+        #expect(GarminDatafield.swissalpine.payloadContent == .attributes)
+        #expect(GarminDatafield.none.payloadContent.isEmpty)
+
+        var settings = GarminWatchSettings()
+        settings.watchface = .complication
+        settings.datafield = .none
+        #expect(settings.payloadContent == [.attributes, .colorScheme])
+        // Send to Watchface off only while switching: the watchface still counts.
+        settings.isWatchfaceDataEnabled = false
+        #expect(settings.payloadContent == [.attributes, .colorScheme])
+        // No app listed here reads the forecast or the time in range.
+        #expect(settings.payloadContent.isDisjoint(with: [.forecast, .timeInRange]))
+    }
+
     @Test("Saved devices come back") func devices() throws {
         let device = GarminDevice(iqDevice: IQDevice(id: UUID(), modelName: "fenix 8", friendlyName: "My fenix"))
         let state: [String: Any] = ["devices": try JSONEncoder().encode([device])]

@@ -116,6 +116,23 @@ public enum GarminTimeInRangeTarget: String, CaseIterable, Identifiable, Codable
 
 // MARK: - Watch apps
 
+/// The optional parts of the payload a watch app reads. Each app gets only those it
+/// reads, and the settings show only those the chosen apps read. Glucose, trend,
+/// IOB, COB, basal and the other values every app shows always go.
+public struct GarminPayloadContent: OptionSet, Hashable, Sendable {
+    public let rawValue: Int
+    public init(rawValue: Int) { self.rawValue = rawValue }
+
+    /// The Primary and Secondary Value choices.
+    public static let attributes = GarminPayloadContent(rawValue: 1 << 0)
+    /// The Glucose Colors choice.
+    public static let colorScheme = GarminPayloadContent(rawValue: 1 << 1)
+    /// The forecast cone.
+    public static let forecast = GarminPayloadContent(rawValue: 1 << 2)
+    /// The time in range.
+    public static let timeInRange = GarminPayloadContent(rawValue: 1 << 3)
+}
+
 /// The Connect IQ watch apps that take the watchface slot.
 public enum GarminWatchface: String, CaseIterable, Identifiable, Codable, Hashable, Sendable {
     public var id: String { rawValue }
@@ -140,6 +157,15 @@ public enum GarminWatchface: String, CaseIterable, Identifiable, Codable, Hashab
         case .trio: return UUID(uuidString: "7a121867-140e-41ba-9982-2e82e2aa6579")
         case .swissalpine: return UUID(uuidString: "4cea4efd-4aaf-4db4-8891-ef36dde14303")
         case .complication: return UUID(uuidString: "0986fd19-604b-4bcb-a931-6f8621738682")
+        }
+    }
+
+    /// What the watch app reads beyond the values every app shows. Trio's help text
+    /// has both watchfaces show the Primary and Secondary Value; the Complication
+    /// app reads both and Glucose Colors.
+    public var payloadContent: GarminPayloadContent {
+        switch self {
+        case .trio, .swissalpine, .complication: return [.attributes, .colorScheme]
         }
     }
 
@@ -189,6 +215,15 @@ public enum GarminDatafield: String, CaseIterable, Identifiable, Codable, Hashab
         case .none: return nil
         }
     }
+
+    /// What the datafield reads beyond the values every app shows: both show the
+    /// Primary and Secondary Value, and neither reads Glucose Colors.
+    public var payloadContent: GarminPayloadContent {
+        switch self {
+        case .trio, .swissalpine: return .attributes
+        case .none: return []
+        }
+    }
 }
 
 // MARK: - Settings
@@ -209,6 +244,13 @@ public struct GarminWatchSettings: Codable, Hashable, Sendable {
     public var timeInRangeTarget: GarminTimeInRangeTarget = .standard
 
     public init() {}
+
+    /// What the chosen watchface and datafield read between them. The watchface
+    /// counts even while Send to Watchface is off, as that is often only while the
+    /// user switches watchfaces on the watch.
+    public var payloadContent: GarminPayloadContent {
+        watchface.payloadContent.union(datafield.payloadContent)
+    }
 
     /// Each setting missing from what was saved (one added since) or no longer
     /// known (a choice removed since) takes its default, rather than all of them
