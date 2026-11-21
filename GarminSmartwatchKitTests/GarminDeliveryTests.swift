@@ -197,6 +197,17 @@ final class DeliveryRig {
         ])
     }
 
+    @Test("A registered app is the chosen watchface or datafield; any other app is none of them")
+    func chosenApp() {
+        let rig = DeliveryRig(devices: [0])
+        #expect(rig.manager.chosenApp(for: rig.watchfaceUUID) == .watchface(.complication))
+        #expect(rig.manager.chosenApp(for: rig.swissalpineUUID) == .datafield(.swissalpine))
+        #expect(rig.manager.chosenApp(for: rig.trioFieldUUID) == nil, "Not the chosen datafield")
+        #expect(rig.manager.chosenApp(for: UUID()) == nil)
+        #expect(rig.manager.chosenApp(for: nil) == nil)
+        #expect(rig.manager.payloadContent(for: rig.app(UUID(), on: rig.deviceA)) == .all)
+    }
+
     @Test("Each app gets only the parts it reads; the readings and shared values go to all")
     func partsPerApp() throws {
         let rig = DeliveryRig(devices: [0])

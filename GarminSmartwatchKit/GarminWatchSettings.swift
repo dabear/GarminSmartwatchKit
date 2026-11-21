@@ -228,6 +228,30 @@ public enum GarminDatafield: String, CaseIterable, Identifiable, Codable, Hashab
     }
 }
 
+/// One of the chosen watch apps, as the plugin sends to it: the watchface or the
+/// datafield. What the plugin needs to know about an app it sends to is asked here,
+/// and each answer comes from the watchface's or datafield's own property.
+public enum GarminChosenApp: Equatable, Sendable {
+    case watchface(GarminWatchface)
+    case datafield(GarminDatafield)
+
+    /// What the app reads beyond the values every app shows.
+    public var payloadContent: GarminPayloadContent {
+        switch self {
+        case let .watchface(watchface): return watchface.payloadContent
+        case let .datafield(datafield): return datafield.payloadContent
+        }
+    }
+
+    /// "watchface:Trio", as the device log names it.
+    var logName: String {
+        switch self {
+        case let .watchface(watchface): return "watchface:\(watchface.displayName)"
+        case let .datafield(datafield): return "datafield:\(datafield.displayName)"
+        }
+    }
+}
+
 // MARK: - Settings
 
 /// The plugin's settings, saved in its `rawState`.
