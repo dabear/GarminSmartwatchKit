@@ -449,6 +449,41 @@ final class DeliveryRig {
         #expect(rig.manager.owedDeliveries[key]?.stateHash != nil)
     }
 
+    @Test("A watchface's status request sends nothing it already confirmed; a changed state still goes")
+    func statusRequestWhenChanged() async {
+        let rig = DeliveryRig(watchface: .swissalpine, datafield: .none, devices: [0])
+        let faceUUID = GarminWatchface.swissalpine.watchfaceUUID!
+        let key = rig.key(faceUUID, on: rig.deviceA)
+        rig.broadcast(120)
+        #expect(rig.spy.sent.count == 1)
+
+        rig.manager.receivedMessage("status", from: rig.app(faceUUID, on: rig.deviceA))
+        await rig.settle()
+        #expect(!rig.manager.forcedStateKeys.contains(key))
+        #expect(rig.manager.lastSentDataHashes[key] != nil, "The confirmed state is kept")
+
+        rig.broadcast(120)
+        #expect(rig.spy.sent.count == 1, "Not sent again: the watchface has it")
+        rig.broadcast(121)
+        #expect(rig.spy.sent.count == 2)
+    }
+
+    @Test("A watchface owed a state gets it when it asks")
+    func statusRequestWhenChangedFlushesOwed() async {
+        let rig = DeliveryRig(watchface: .swissalpine, datafield: .none, devices: [0])
+        let faceUUID = GarminWatchface.swissalpine.watchfaceUUID!
+        let key = rig.key(faceUUID, on: rig.deviceA)
+        rig.spy.setResult(.failure_DeviceIsBusy, for: faceUUID, on: rig.deviceA.uuid)
+        rig.broadcast(120)
+        #expect(await rig.eventually { rig.manager.owedDeliveries[key]?.stateHash != nil })
+        let before = rig.spy.sent.count
+
+        rig.spy.setResult(nil, for: faceUUID, on: rig.deviceA.uuid)
+        rig.manager.receivedMessage("status", from: rig.app(faceUUID, on: rig.deviceA))
+        #expect(await rig.eventually { rig.manager.lastSentDataHashes[key] != nil })
+        #expect(rig.spy.sent.count == before + 1)
+    }
+
     // MARK: - Other failures
 
     @Test("Another failure is resent exactly once after the retry delay")

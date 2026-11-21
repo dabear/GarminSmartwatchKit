@@ -728,9 +728,9 @@ extension GarminSmartwatchManager: IQUIOverrideDelegate, IQDeviceEventDelegate, 
             return
         }
 
-        // The app is asking, so answer even when nothing changed: a freshly opened
-        // watch app or glance has no data until it gets a send.
-        if let registeredKey {
+        // A watch app that starts empty gets the state even when it already confirmed it;
+        // a watchface or datafield gets only what it hasn't got (`GarminStatusReply`).
+        if let registeredKey, (chosenApp(for: appUUID)?.statusReply ?? .always) == .always {
             lastSentDataHashes[registeredKey] = nil
             forcedStateKeys.insert(registeredKey)
         }

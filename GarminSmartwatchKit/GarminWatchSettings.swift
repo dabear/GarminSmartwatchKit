@@ -135,6 +135,18 @@ public struct GarminPayloadContent: OptionSet, Hashable, Sendable {
     public static let all: GarminPayloadContent = [.attributes, .colorScheme, .forecast, .timeInRange]
 }
 
+/// How a watch app's "status" request is answered.
+public enum GarminStatusReply: Equatable, Sendable {
+    /// With the state even when the app already confirmed it: a watch app or glance
+    /// just opened starts empty.
+    case always
+    /// Only with what the app hasn't got, as Trio's built-in Garmin support answers. A
+    /// watchface's or datafield's background keeps what it was sent. Answering every
+    /// request as well as sending each change kept the Trio and SwissAlpine watchfaces
+    /// a reading or more behind, the lag growing until the watchface was reinstalled.
+    case whenChanged
+}
+
 /// The Connect IQ watch apps that take the watchface slot.
 public enum GarminWatchface: String, CaseIterable, Identifiable, Codable, Hashable, Sendable {
     public var id: String { rawValue }
@@ -168,6 +180,14 @@ public enum GarminWatchface: String, CaseIterable, Identifiable, Codable, Hashab
     public var payloadContent: GarminPayloadContent {
         switch self {
         case .trio, .swissalpine, .complication: return [.attributes, .colorScheme]
+        }
+    }
+
+    /// The watchfaces keep what they were sent; the Complication app starts empty.
+    public var statusReply: GarminStatusReply {
+        switch self {
+        case .trio, .swissalpine: return .whenChanged
+        case .complication: return .always
         }
     }
 
@@ -226,6 +246,9 @@ public enum GarminDatafield: String, CaseIterable, Identifiable, Codable, Hashab
         case .none: return []
         }
     }
+
+    /// A datafield keeps what it was sent.
+    public var statusReply: GarminStatusReply { .whenChanged }
 }
 
 /// One of the chosen watch apps, as the plugin sends to it: the watchface or the
@@ -240,6 +263,14 @@ public enum GarminChosenApp: Equatable, Sendable {
         switch self {
         case let .watchface(watchface): return watchface.payloadContent
         case let .datafield(datafield): return datafield.payloadContent
+        }
+    }
+
+    /// How the app's "status" request is answered.
+    public var statusReply: GarminStatusReply {
+        switch self {
+        case let .watchface(watchface): return watchface.statusReply
+        case let .datafield(datafield): return datafield.statusReply
         }
     }
 
