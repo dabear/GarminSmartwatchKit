@@ -78,6 +78,10 @@ public final class GarminSmartwatchManager: NSObject {
     /// Wait before the single resend of a failed message.
     var sendRetryDelay: TimeInterval = 2
 
+    /// How long a new reading waits for the loop's result before it goes alone; Trio's
+    /// built-in Garmin support waits 10 s (`glucoseFallbackDelay`).
+    var glucoseWaitForLoop: TimeInterval = 10
+
     // MARK: - Delivery
 
     /// What an app is still owed after its send failed for good; the latest state wins. Main queue only.
@@ -95,8 +99,8 @@ public final class GarminSmartwatchManager: NSObject {
     /// The only send gate, set by the SDK's device status callbacks.
     private(set) var disconnectedDevices: Set<UUID> = []
 
-    /// Latest broadcast payload, sent again to apps that are owed state.
-    private var lastBroadcast: (payload: Any, hash: Int)?
+    /// Latest broadcast state, whole, sent again (as each app gets it) to apps that are owed state.
+    private var lastBroadcast: Any?
 
     /// Apps that asked for state: the next broadcast goes to them even when unchanged, whatever an
     /// older send's completion confirms in the meantime. Consumed by that broadcast.
@@ -202,15 +206,18 @@ public final class GarminSmartwatchManager: NSObject {
     private var currentDatafield: GarminDatafield { settings.datafield }
     private var isWatchfaceDataEnabled: Bool { settings.isWatchfaceDataEnabled }
 
+    /// Which of the chosen watch apps `uuid` is; `nil` for an app the settings don't name.
+    /// Every question about a particular app (its name, what it reads) starts here.
+    func chosenApp(for uuid: UUID?) -> GarminChosenApp? {
+        guard let uuid else { return nil }
+        if uuid == currentWatchface.watchfaceUUID { return .watchface(currentWatchface) }
+        if uuid == currentDatafield.datafieldUUID { return .datafield(currentDatafield) }
+        return nil
+    }
+
     /// Returns the display name for an app UUID (watchface or datafield).
     private func appDisplayName(for uuid: UUID) -> String {
-        if uuid == currentWatchface.watchfaceUUID {
-            return "watchface:\(currentWatchface.displayName)"
-        } else if uuid == currentDatafield.datafieldUUID {
-            return "datafield:\(currentDatafield.displayName)"
-        } else {
-            return "unknown app"
-        }
+        chosenApp(for: uuid)?.logName ?? "unknown app"
     }
 
     /// Returns the display name including UUID, for registration and errors.
@@ -391,43 +398,48 @@ public final class GarminSmartwatchManager: NSObject {
         deviceSelectionPromise = nil
     }
 
-    /// Sends the state once to every registered app that hasn't confirmed this exact state yet.
+    /// Sends the state once to every registered app that hasn't confirmed this exact state yet,
+    /// each with only the parts of it that app reads.
     func broadcastWatchStateData(_ data: Data) {
         guard !isDeleted else { return }
-        // Stable content-based hash (sorted JSON bytes)
-        let currentHash: Int
-        if let sortedData = try? JSONSerialization.data(
-            withJSONObject: JSONSerialization.jsonObject(with: data, options: []),
-            options: [.sortedKeys]
-        ) {
-            currentHash = sortedData.base64EncodedString().hashValue
-        } else {
-            currentHash = data.count // Fallback
-        }
-
         guard let jsonObject = try? JSONSerialization.jsonObject(with: data, options: []) else {
             log(type: .error, "Garmin watch state is not valid JSON")
             return
         }
-        lastBroadcast = (jsonObject, currentHash)
+        lastBroadcast = jsonObject
 
         for app in watchApps {
             guard let key = deliveryKey(for: app), let device = app.device else { continue }
             let appName = appDisplayName(for: app.uuid)
+            let (payload, stateHash) = appPayload(jsonObject, for: app)
 
-            if lastSentDataHashes[key] == currentHash, owedDeliveries[key]?.stateHash == nil, !forcedStateKeys.contains(key) {
+            if lastSentDataHashes[key] == stateHash, owedDeliveries[key]?.stateHash == nil, !forcedStateKeys.contains(key) {
                 log("Garmin \(appName) skipped, data unchanged")
                 continue
             }
             forcedStateKeys.remove(key)
             // An unreachable app is owed this state instead.
             guard isReachable(key: key, device: device, appName: appName) else {
-                recordOwed(for: key, stateHash: currentHash)
+                recordOwed(for: key, stateHash: stateHash)
                 continue
             }
             log("Sending state to Garmin \(appName)")
-            sendMessage(jsonObject, to: app, appName: appName, stateHash: currentHash)
+            sendMessage(payload, to: app, appName: appName, stateHash: stateHash)
         }
+    }
+
+    /// What the app reads; an app the settings don't name gets everything.
+    func payloadContent(for app: IQApp) -> GarminPayloadContent {
+        chosenApp(for: app.uuid)?.payloadContent ?? .all
+    }
+
+    /// The state as `app` gets it, and a stable hash of that (sorted JSON bytes), so an app is
+    /// sent again only when what it gets changes. Hashed as a string: `Data`'s own hash covers
+    /// only its first 80 bytes, so a change further in would look unchanged.
+    private func appPayload(_ state: Any, for app: IQApp) -> (payload: Any, hash: Int) {
+        let payload = GarminWatchState.payload(state, for: payloadContent(for: app))
+        let sorted = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+        return (payload, sorted?.base64EncodedString().hashValue ?? 0)
     }
 
     // MARK: - Delivery
@@ -467,9 +479,11 @@ public final class GarminSmartwatchManager: NSObject {
     /// Any delivered message proves the channel, so what the app is still owed goes out now.
     private func flushOwed(to app: IQApp, key: String, appName: String) {
         guard !isDeleted, let owed = owedDeliveries.removeValue(forKey: key) else { return }
-        if owed.stateHash != nil, let broadcast = lastBroadcast, lastSentDataHashes[key] != broadcast.hash {
+        guard owed.stateHash != nil, let state = lastBroadcast else { return }
+        let (payload, stateHash) = appPayload(state, for: app)
+        if lastSentDataHashes[key] != stateHash {
             log("Sending owed state to Garmin \(appName)")
-            sendMessage(broadcast.payload, to: app, appName: appName, stateHash: broadcast.hash)
+            sendMessage(payload, to: app, appName: appName, stateHash: stateHash)
         }
     }
 
@@ -718,9 +732,9 @@ extension GarminSmartwatchManager: IQUIOverrideDelegate, IQDeviceEventDelegate, 
             return
         }
 
-        // The app is asking, so answer even when nothing changed: a freshly opened
-        // watch app or glance has no data until it gets a send.
-        if let registeredKey {
+        // A watch app that starts empty gets the state even when it already confirmed it;
+        // a watchface or datafield gets only what it hasn't got (`GarminStatusReply`).
+        if let registeredKey, (chosenApp(for: appUUID)?.statusReply ?? .always) == .always {
             lastSentDataHashes[registeredKey] = nil
             forcedStateKeys.insert(registeredKey)
         }
@@ -756,7 +770,16 @@ extension GarminSmartwatchManager: SmartwatchManager {
               let delegate = smartwatchManagerDelegate
         else { return }
         readTask?.cancel()
-        readTask = Task { [weak self] in
+        // A new reading is followed by the loop's result within seconds: wait for it, as
+        // Trio's built-in Garmin support does, so the watch gets one message per reading
+        // rather than one for the reading and another for the loop. The loop's change
+        // cancels this wait; without one, the reading goes alone after the wait.
+        let waitsForLoop = changes.intersection([.glucose, .loop, .presets, .settings]) == .glucose
+        readTask = Task { [weak self, glucoseWaitForLoop] in
+            if waitsForLoop {
+                try? await Task.sleep(nanoseconds: UInt64(glucoseWaitForLoop * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+            }
             guard let self else { return }
             let host = await self.readHostData(from: delegate)
             guard !Task.isCancelled else { return }
@@ -766,9 +789,14 @@ extension GarminSmartwatchManager: SmartwatchManager {
         }
     }
 
-    /// Device log only, to check the cone sent against the host's forecasts.
+    /// Device log only, to check the cone sent against the host's forecasts: only while a
+    /// registered watch app reads the forecast, so it is logged only when it is sent.
     @MainActor
     private func logForecast(_ curves: [[PredictedGlucoseValue]]) {
+        guard watchApps.contains(where: { payloadContent(for: $0).contains(.forecast) }) else {
+            loggedForecast = []
+            return
+        }
         let lines = GarminWatchState.forecastLogLines(curves)
         guard lines != loggedForecast else { return }
         loggedForecast = lines

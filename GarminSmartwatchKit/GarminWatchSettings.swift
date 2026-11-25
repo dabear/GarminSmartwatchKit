@@ -116,6 +116,37 @@ public enum GarminTimeInRangeTarget: String, CaseIterable, Identifiable, Codable
 
 // MARK: - Watch apps
 
+/// The optional parts of the payload a watch app reads. Each app gets only those it
+/// reads, and the settings show only those the chosen apps read. Glucose, trend,
+/// IOB, COB, basal and the other values every app shows always go.
+public struct GarminPayloadContent: OptionSet, Hashable, Sendable {
+    public let rawValue: Int
+    public init(rawValue: Int) { self.rawValue = rawValue }
+
+    /// The Primary and Secondary Value choices.
+    public static let attributes = GarminPayloadContent(rawValue: 1 << 0)
+    /// The Glucose Colors choice.
+    public static let colorScheme = GarminPayloadContent(rawValue: 1 << 1)
+    /// The forecast cone.
+    public static let forecast = GarminPayloadContent(rawValue: 1 << 2)
+    /// The time in range.
+    public static let timeInRange = GarminPayloadContent(rawValue: 1 << 3)
+
+    public static let all: GarminPayloadContent = [.attributes, .colorScheme, .forecast, .timeInRange]
+}
+
+/// How a watch app's "status" request is answered.
+public enum GarminStatusReply: Equatable, Sendable {
+    /// With the state even when the app already confirmed it: a watch app or glance
+    /// just opened starts empty.
+    case always
+    /// Only with what the app hasn't got, as Trio's built-in Garmin support answers. A
+    /// watchface's or datafield's background keeps what it was sent. Answering every
+    /// request as well as sending each change kept the Trio and SwissAlpine watchfaces
+    /// a reading or more behind, the lag growing until the watchface was reinstalled.
+    case whenChanged
+}
+
 /// The Connect IQ watch apps that take the watchface slot.
 public enum GarminWatchface: String, CaseIterable, Identifiable, Codable, Hashable, Sendable {
     public var id: String { rawValue }
@@ -140,6 +171,23 @@ public enum GarminWatchface: String, CaseIterable, Identifiable, Codable, Hashab
         case .trio: return UUID(uuidString: "7a121867-140e-41ba-9982-2e82e2aa6579")
         case .swissalpine: return UUID(uuidString: "4cea4efd-4aaf-4db4-8891-ef36dde14303")
         case .complication: return UUID(uuidString: "0986fd19-604b-4bcb-a931-6f8621738682")
+        }
+    }
+
+    /// What the watch app reads beyond the values every app shows. Trio's help text
+    /// has both watchfaces show the Primary and Secondary Value; the Complication
+    /// app reads both and Glucose Colors.
+    public var payloadContent: GarminPayloadContent {
+        switch self {
+        case .trio, .swissalpine, .complication: return [.attributes, .colorScheme]
+        }
+    }
+
+    /// The watchfaces keep what they were sent; the Complication app starts empty.
+    public var statusReply: GarminStatusReply {
+        switch self {
+        case .trio, .swissalpine: return .whenChanged
+        case .complication: return .always
         }
     }
 
@@ -189,6 +237,50 @@ public enum GarminDatafield: String, CaseIterable, Identifiable, Codable, Hashab
         case .none: return nil
         }
     }
+
+    /// What the datafield reads beyond the values every app shows: both show the
+    /// Primary and Secondary Value, and neither reads Glucose Colors.
+    public var payloadContent: GarminPayloadContent {
+        switch self {
+        case .trio, .swissalpine: return .attributes
+        case .none: return []
+        }
+    }
+
+    /// A datafield keeps what it was sent.
+    public var statusReply: GarminStatusReply { .whenChanged }
+}
+
+/// One of the chosen watch apps, as the plugin sends to it: the watchface or the
+/// datafield. What the plugin needs to know about an app it sends to is asked here,
+/// and each answer comes from the watchface's or datafield's own property.
+public enum GarminChosenApp: Equatable, Sendable {
+    case watchface(GarminWatchface)
+    case datafield(GarminDatafield)
+
+    /// What the app reads beyond the values every app shows.
+    public var payloadContent: GarminPayloadContent {
+        switch self {
+        case let .watchface(watchface): return watchface.payloadContent
+        case let .datafield(datafield): return datafield.payloadContent
+        }
+    }
+
+    /// How the app's "status" request is answered.
+    public var statusReply: GarminStatusReply {
+        switch self {
+        case let .watchface(watchface): return watchface.statusReply
+        case let .datafield(datafield): return datafield.statusReply
+        }
+    }
+
+    /// "watchface:Trio", as the device log names it.
+    var logName: String {
+        switch self {
+        case let .watchface(watchface): return "watchface:\(watchface.displayName)"
+        case let .datafield(datafield): return "datafield:\(datafield.displayName)"
+        }
+    }
 }
 
 // MARK: - Settings
@@ -209,6 +301,13 @@ public struct GarminWatchSettings: Codable, Hashable, Sendable {
     public var timeInRangeTarget: GarminTimeInRangeTarget = .standard
 
     public init() {}
+
+    /// What the chosen watchface and datafield read between them. The watchface
+    /// counts even while Send to Watchface is off, as that is often only while the
+    /// user switches watchfaces on the watch.
+    public var payloadContent: GarminPayloadContent {
+        watchface.payloadContent.union(datafield.payloadContent)
+    }
 
     /// Each setting missing from what was saved (one added since) or no longer
     /// known (a choice removed since) takes its default, rather than all of them

@@ -183,6 +183,57 @@ final class DeliveryRig {
         #expect(rig.spy.sent.count == 8)
     }
 
+    /// A state with every optional part, the forecast set by `forecastLow`.
+    private func fullState(sgv: Int = 120, forecastLow: Int = 100) -> Data {
+        try! JSONSerialization.data(withJSONObject: [
+            [
+                "sgv": sgv, "direction": "Flat",
+                "displayPrimaryAttributeChoice": "cob", "displaySecondaryAttributeChoice": "tbr",
+                "glucoseColorScheme": "dynamic",
+                "forecastDate": 1_800_000_000_000, "forecastLow": [forecastLow], "forecastHigh": [140],
+                "tirLow": 5, "tirInRange": 80, "tirHigh": 15,
+            ],
+            ["sgv": sgv + 5, "date": 1_799_999_700_000],
+        ])
+    }
+
+    @Test("A registered app is the chosen watchface or datafield; any other app is none of them")
+    func chosenApp() {
+        let rig = DeliveryRig(devices: [0])
+        #expect(rig.manager.chosenApp(for: rig.watchfaceUUID) == .watchface(.complication))
+        #expect(rig.manager.chosenApp(for: rig.swissalpineUUID) == .datafield(.swissalpine))
+        #expect(rig.manager.chosenApp(for: rig.trioFieldUUID) == nil, "Not the chosen datafield")
+        #expect(rig.manager.chosenApp(for: UUID()) == nil)
+        #expect(rig.manager.chosenApp(for: nil) == nil)
+        #expect(rig.manager.payloadContent(for: rig.app(UUID(), on: rig.deviceA)) == .all)
+    }
+
+    @Test("Each app gets only the parts it reads; the readings and shared values go to all")
+    func partsPerApp() throws {
+        let rig = DeliveryRig(devices: [0])
+        rig.manager.broadcastWatchStateData(fullState())
+
+        let watchApp = try #require(rig.sends(to: rig.watchfaceUUID).first?.message as? [[String: Any]])
+        #expect(Set(watchApp[0].keys) == ["sgv", "direction", "displayPrimaryAttributeChoice", "displaySecondaryAttributeChoice", "glucoseColorScheme"])
+        #expect(watchApp.count == 2, "History entries are kept")
+
+        let datafield = try #require(rig.sends(to: rig.swissalpineUUID).first?.message as? [[String: Any]])
+        #expect(Set(datafield[0].keys) == ["sgv", "direction", "displayPrimaryAttributeChoice", "displaySecondaryAttributeChoice"])
+    }
+
+    @Test("A change in a part no app reads sends nothing; one in a part an app reads goes to that app")
+    func unreadChangeNotSent() {
+        let rig = DeliveryRig(devices: [0])
+        rig.manager.broadcastWatchStateData(fullState())
+        #expect(rig.spy.sent.count == 2)
+
+        rig.manager.broadcastWatchStateData(fullState(forecastLow: 95))
+        #expect(rig.spy.sent.count == 2, "Neither app reads the forecast")
+
+        rig.manager.broadcastWatchStateData(fullState(sgv: 118, forecastLow: 95))
+        #expect(rig.spy.sent.count == 4)
+    }
+
     @Test("The payload goes out as the parsed JSON of the broadcast data")
     func payloadIsParsedJSON() throws {
         let rig = DeliveryRig(datafield: .none, devices: [0])
@@ -396,6 +447,41 @@ final class DeliveryRig {
         #expect(rig.spy.sent.count == 1)
         #expect(rig.manager.forcedStateKeys.isEmpty)
         #expect(rig.manager.owedDeliveries[key]?.stateHash != nil)
+    }
+
+    @Test("A watchface's status request sends nothing it already confirmed; a changed state still goes")
+    func statusRequestWhenChanged() async {
+        let rig = DeliveryRig(watchface: .swissalpine, datafield: .none, devices: [0])
+        let faceUUID = GarminWatchface.swissalpine.watchfaceUUID!
+        let key = rig.key(faceUUID, on: rig.deviceA)
+        rig.broadcast(120)
+        #expect(rig.spy.sent.count == 1)
+
+        rig.manager.receivedMessage("status", from: rig.app(faceUUID, on: rig.deviceA))
+        await rig.settle()
+        #expect(!rig.manager.forcedStateKeys.contains(key))
+        #expect(rig.manager.lastSentDataHashes[key] != nil, "The confirmed state is kept")
+
+        rig.broadcast(120)
+        #expect(rig.spy.sent.count == 1, "Not sent again: the watchface has it")
+        rig.broadcast(121)
+        #expect(rig.spy.sent.count == 2)
+    }
+
+    @Test("A watchface owed a state gets it when it asks")
+    func statusRequestWhenChangedFlushesOwed() async {
+        let rig = DeliveryRig(watchface: .swissalpine, datafield: .none, devices: [0])
+        let faceUUID = GarminWatchface.swissalpine.watchfaceUUID!
+        let key = rig.key(faceUUID, on: rig.deviceA)
+        rig.spy.setResult(.failure_DeviceIsBusy, for: faceUUID, on: rig.deviceA.uuid)
+        rig.broadcast(120)
+        #expect(await rig.eventually { rig.manager.owedDeliveries[key]?.stateHash != nil })
+        let before = rig.spy.sent.count
+
+        rig.spy.setResult(nil, for: faceUUID, on: rig.deviceA.uuid)
+        rig.manager.receivedMessage("status", from: rig.app(faceUUID, on: rig.deviceA))
+        #expect(await rig.eventually { rig.manager.lastSentDataHashes[key] != nil })
+        #expect(rig.spy.sent.count == before + 1)
     }
 
     // MARK: - Other failures

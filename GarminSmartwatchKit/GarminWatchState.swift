@@ -508,3 +508,30 @@ public extension GarminWatchState {
         return Int16(value.rounded())
     }
 }
+
+// MARK: - Payload per watch app
+
+extension GarminWatchState {
+    /// The keys of the optional parts of the payload, all on the first entry.
+    static func keys(for content: GarminPayloadContent) -> Set<String> {
+        var keys: [CodingKeys] = []
+        if content.contains(.attributes) {
+            keys += [.displayPrimaryAttributeChoice, .displaySecondaryAttributeChoice]
+        }
+        if content.contains(.colorScheme) { keys.append(.glucoseColorScheme) }
+        if content.contains(.forecast) { keys += [.forecastDate, .forecastLow, .forecastHigh] }
+        if content.contains(.timeInRange) { keys += [.tirLow, .tirInRange, .tirHigh] }
+        return Set(keys.map(\.rawValue))
+    }
+
+    /// The payload as a watch app that reads `content` gets it: the optional parts
+    /// it doesn't read are left out, so it gets no more than it uses.
+    static func payload(_ payload: Any, for content: GarminPayloadContent) -> Any {
+        guard var states = payload as? [[String: Any]], var first = states.first else { return payload }
+        for key in keys(for: GarminPayloadContent.all.subtracting(content)) {
+            first.removeValue(forKey: key)
+        }
+        states[0] = first
+        return states
+    }
+}
