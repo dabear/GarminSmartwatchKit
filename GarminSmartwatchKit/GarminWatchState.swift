@@ -266,6 +266,8 @@ public extension GarminWatchState {
         public var historySpan: TimeInterval
         /// The least time between two readings sent (`GarminWatchface.historySpacing`).
         public var historySpacing: TimeInterval
+        /// The most entries to send, the newest included (`GarminWatchface.maxEntries`).
+        public var maxEntries: Int?
         /// Which readings the time in range counts; `nil` (off) sends none.
         public var timeInRangePeriod: GarminTimeInRangePeriod?
         /// The range the time in range counts as in range.
@@ -277,6 +279,7 @@ public extension GarminWatchState {
             glucoseColorScheme: String,
             historySpan: TimeInterval,
             historySpacing: TimeInterval,
+            maxEntries: Int? = nil,
             timeInRangePeriod: GarminTimeInRangePeriod? = nil,
             timeInRangeTarget: GarminTimeInRangeTarget = .standard
         ) {
@@ -285,6 +288,7 @@ public extension GarminWatchState {
             self.glucoseColorScheme = glucoseColorScheme
             self.historySpan = historySpan
             self.historySpacing = historySpacing
+            self.maxEntries = maxEntries
             self.timeInRangePeriod = timeInRangePeriod
             self.timeInRangeTarget = timeInRangeTarget
         }
@@ -396,13 +400,16 @@ public extension GarminWatchState {
 
     /// The readings after the newest to send, newest first: those less than
     /// `historySpan` older than the newest reading, each at least `historySpacing`
-    /// (less the tolerance) older than the one sent before it. The delta above still
-    /// comes from the reading right after the newest, whether it's sent or not.
+    /// (less the tolerance) older than the one sent before it, up to `maxEntries`.
+    /// The delta above still comes from the reading right after the newest, whether
+    /// it's sent or not.
     static func history(after readings: [StoredGlucoseSample], options: DisplayOptions) -> [StoredGlucoseSample] {
         guard let latest = readings.first else { return [] }
+        let limit = options.maxEntries.map { $0 - 1 } ?? .max
         var sent: [StoredGlucoseSample] = []
         var lastSent = latest.startDate
         for reading in readings.dropFirst() {
+            guard sent.count < limit else { break }
             guard latest.startDate.timeIntervalSince(reading.startDate) < options.historySpan else { break }
             guard lastSent.timeIntervalSince(reading.startDate) >= options.historySpacing - historySpacingTolerance else { continue }
             sent.append(reading)
